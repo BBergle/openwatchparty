@@ -1,11 +1,15 @@
 import 'dart:async';
 
-/// Tells a resolver or probe that the SDK no longer needs its answer: the epoch changed, the user chose a file, the
-/// party left or ended. Release what you opened and return; the SDK ignores the result.
+/// Tells a resolver or probe that the SDK no longer needs its answer.
+///
+/// The SDK cancels the work when the epoch changes, the user chooses a file, or the party leaves or ends. Release what
+/// you opened and return. The SDK ignores the result.
 abstract interface class Cancellation {
   bool get isCancelled;
 
-  /// Completes when the work is cancelled. Never completes with an error.
+  /// Completes when the work is cancelled.
+  ///
+  /// It never completes with an error.
   Future<void> get whenCancelled;
 }
 

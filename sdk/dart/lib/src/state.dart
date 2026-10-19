@@ -14,10 +14,10 @@ enum Connection {
   /// A member with a live connection.
   connected,
 
-  /// The connection dropped; the SDK is resuming.
+  /// The connection dropped, and the SDK is resuming.
   reconnecting,
 
-  /// The party ended; [PartyState.endReason] says why.
+  /// The party ended. [PartyState.endReason] says why.
   ended,
 }
 
@@ -38,11 +38,13 @@ enum EndReason {
   /// A resume on another connection took over this participant.
   replaced,
 
-  /// Resume became impossible; [EndedEvent.error] says why.
+  /// Resume became impossible. [EndedEvent.error] says why.
   lost,
 }
 
-/// The file offered while the user decides: the closest candidate and its duration − the media's `durationMs`.
+/// The file offered while the user decides.
+///
+/// [candidate] is the closest candidate. [deltaMs] is its duration minus the media's `durationMs`.
 final class Mismatch<T> {
   const Mismatch(this.candidate, this.deltaMs);
 
@@ -60,8 +62,10 @@ final class Mismatch<T> {
   String toString() => 'Mismatch(${candidate.id}, $deltaMs)';
 }
 
-/// Everything the UI shows, as one value (SDK.md §16.6). It changes when a snapshot, the media, matching, the player
-/// state, the offset or the connection changes; never per tick. Its lists are unmodifiable.
+/// Everything the UI shows, as one value (SDK.md §16.6).
+///
+/// The state changes when a snapshot, the media, matching, the player state, the offset or the connection changes. It
+/// never changes per tick. Its lists are unmodifiable.
 final class PartyState<T> {
   const PartyState({
     required this.connection,
@@ -92,7 +96,7 @@ final class PartyState<T> {
 
   final Connection connection;
 
-  /// Own peer ID while in a room.
+  /// This party's own peer ID while in a room.
   final String? peerId;
 
   /// The last accepted snapshot.
@@ -101,31 +105,38 @@ final class PartyState<T> {
   /// The current descriptor.
   final Media? media;
 
-  /// As reported in `status`.
+  /// This party's match, as reported in `status`.
   final Match? match;
 
-  /// The file to open for the current media: open it and call `attachPlayer` with its [Candidate.ref]. A player
-  /// already attached with that ref follows at once and isn't reopened. For media this party shared it is the `ref`
-  /// passed to `setMedia`, with id `""`.
+  /// The file to open for the current media.
+  ///
+  /// Open it and call `attachPlayer` with its [Candidate.ref]. A player already attached with that ref follows at once
+  /// and isn't reopened.
+  ///
+  /// For media this party shared, the choice has id `""` and the `ref` passed to `setMedia`.
   final Candidate<T>? choice;
 
-  /// The file offered while the user decides: answer with `acceptMismatch`, `declineMismatch` or `choose`.
+  /// The file offered while the user decides.
+  ///
+  /// Answer it with `acceptMismatch`, `declineMismatch` or `choose`.
   final Mismatch<T>? mismatch;
 
-  /// The walk's ranked candidates with their deltas once known (SDK.md §9.5).
+  /// The walk's ranked candidates, with their deltas once known (SDK.md §9.5).
   final List<Ranked<T>> candidates;
   final int offsetMs;
 
-  /// As reported in `status`.
+  /// This party's player state, as reported in `status`.
   final PlayerState player;
   final EndReason? endReason;
 
-  /// Own entry of `room.participants`.
+  /// This party's own entry in `room.participants`.
   Participant? get me => peerId == null ? null : room?.participant(peerId!);
 
   bool get isHost => me?.host ?? false;
 
-  /// Host, or control is `everyone`.
+  /// Whether this party may play, pause, seek and set the rate.
+  ///
+  /// That holds for the host, and for any participant while control is `everyone`.
   bool get canControl => isHost || (me != null && room?.control == Control.everyone);
 
   @override
@@ -161,28 +172,32 @@ bool _listEquals<E>(List<E> a, List<E> b) {
   return true;
 }
 
-/// Something that happened in the party (SDK.md §15). The rest is state.
+/// Something that happened in the party (SDK.md §15).
 ///
-/// New events may appear in SDK 1.x: switch over it with a default case that ignores the ones you don't know.
+/// Everything else is state. New events may appear in SDK 1.x, so switch over events with a default case that ignores
+/// the ones you don't know.
 abstract final class PartyEvent {
   const PartyEvent();
 }
 
-/// The action an accepted `room` carried, for toasts (SDK.md §15).
+/// The action an accepted `room` carried, for showing toasts (SDK.md §15).
 final class ActionEvent extends PartyEvent {
   const ActionEvent(
       {required this.kind, required this.byPeerId, required this.by, required this.byMe, required this.room});
 
-  /// `play`, `pause`, `seek`, `rate`, `media`, `stall`, `ended`, `host`, or one this SDK doesn't describe.
+  /// The action's kind.
+  ///
+  /// The kinds this SDK describes are `play`, `pause`, `seek`, `rate`, `media`, `stall`, `ended` and `host`. Other
+  /// kinds may arrive too.
   final String kind;
 
-  /// The actor's peer ID, null for the relay.
+  /// The actor's peer ID, or null when the relay acted.
   final String? byPeerId;
 
-  /// The actor's entry, null when the actor has left or is the relay.
+  /// The actor's entry, or null when the actor has left or is the relay.
   final Participant? by;
 
-  /// This party did it.
+  /// Whether this party took the action.
   final bool byMe;
 
   /// The snapshot that carried the action.
@@ -221,7 +236,7 @@ final class ErrorEvent extends PartyEvent {
   String toString() => 'ErrorEvent($error)';
 }
 
-/// The resolver threw or took longer than 30 s (SDK.md §9.2).
+/// The resolver threw or took longer than 30 seconds (SDK.md §9.2).
 final class ResolveFailedEvent extends PartyEvent {
   const ResolveFailedEvent(this.error);
 
@@ -231,10 +246,14 @@ final class ResolveFailedEvent extends PartyEvent {
   String toString() => 'ResolveFailedEvent($error)';
 }
 
-/// The player refused to start (SDK.md §10.2): a `play` the SDK issued threw and the player stayed paused, as a
-/// browser does when its autoplay policy wants a user gesture. The SDK reports `loading` until the player plays; ask
-/// the user to press play on the player itself. It comes again only after the player played, the room stopped
-/// playing or the adapter was unbound.
+/// The player refused to start (SDK.md §10.2).
+///
+/// A `play` the SDK issued threw, and the player stayed paused. A browser does this when its autoplay policy wants a
+/// user gesture.
+///
+/// The SDK reports `loading` until the player plays. Ask the user to press play on the player itself.
+///
+/// The event comes again only after the player played, the room stopped playing or the adapter was unbound.
 final class PlayBlockedEvent extends PartyEvent {
   const PlayBlockedEvent(this.error);
 

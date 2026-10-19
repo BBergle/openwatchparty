@@ -6,16 +6,16 @@ import 'text.dart';
 final class Relay {
   const Relay({required this.id, required this.name, required this.url, required this.prefixes});
 
-  /// Stable ID, never reused for another relay (`eu`).
+  /// The relay's stable ID, such as `eu`, never reused for another relay.
   final String id;
 
-  /// Display name (`Europe`).
+  /// The relay's display name, such as `Europe`.
   final String name;
 
   /// The relay's WebSocket endpoint, `wss://…/v1/ws`.
   final String url;
 
-  /// The first code symbols this relay owns.
+  /// The first symbols of the room codes this relay owns.
   final String prefixes;
 
   @override

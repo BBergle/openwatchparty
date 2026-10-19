@@ -18,18 +18,28 @@ import 'state.dart';
 import 'text.dart';
 import 'transport.dart';
 
-/// One participant's session (SDK.md §16.2): the connection, the room state, matching, status and following.
+/// One participant's session in a watch party (SDK.md §16.2).
 ///
-/// The app supplies a [Resolver], a [PlayerAdapter] and its UI. Read the current values from [state] and listen to
-/// [states] and [events]; both streams are broadcast. Call [close] when done.
+/// The party handles the connection, the room state, matching, status and following the room. The app supplies a
+/// [Resolver], a [PlayerAdapter] and its UI.
+///
+/// Read the current values from [state], and listen to [states] and [events]. Both streams are broadcast streams. Call
+/// [close] when you are done with the party.
 final class WatchParty<T> {
-  /// [client] is the app and its version, `Example/1.31.0`; [name] the user's display name. Both are checked by
-  /// SPEC.md §6.3; a bad one throws [PartyException] `invalid_message`.
+  /// Creates a party that finds its relays through [relays].
   ///
-  /// Without a [resolver], other participants' media has no candidates: `match` is `unavailable`.
+  /// [client] is the app and its version, such as `Example/1.31.0`. [name] is the user's display name. Both are
+  /// checked as SPEC.md §6.3 says, and a bad one throws [PartyException] `invalid_message`.
   ///
-  /// [connect] opens the WebSockets, [nowMs] is the monotonic local clock and [random] drives the reconnect backoff,
-  /// one `nextDouble()` per draw. Timers are `dart:async` timers, so `fake_async` drives the party in tests.
+  /// Without a [resolver], other participants' media has no candidates, so `match` is `unavailable`.
+  ///
+  /// The remaining parameters replace the SDK's defaults:
+  ///
+  /// - [connect] opens the WebSockets.
+  /// - [nowMs] is the monotonic local clock.
+  /// - [random] drives the reconnect backoff, with one `nextDouble()` per draw.
+  ///
+  /// Timers are `dart:async` timers, so `fake_async` drives the party in tests.
   WatchParty({
     required Relays relays,
     required String client,
@@ -160,8 +170,10 @@ final class WatchParty<T> {
   /// keeps its connection until the answer (SDK.md §14).
   Completer<bool>? _resumeSampled;
 
-  /// Everything the UI shows. Changes when a snapshot, the media, matching, the player state, the offset or the
-  /// connection changes; never per tick.
+  /// Everything the UI shows.
+  ///
+  /// It changes when a snapshot, the media, matching, the player state, the offset or the connection changes. It never
+  /// changes per tick.
   PartyState<T> get state => _state;
 
   /// Every new [state], once per change.
@@ -173,11 +185,14 @@ final class WatchParty<T> {
   // ---------------------------------------------------------------------------------------------------------------
   // Create and join (SDK.md §6, §7)
 
-  /// Creates a room and joins it as host (SDK.md §6). Returns the room code.
+  /// Creates a room and joins it as host (SDK.md §6).
   ///
-  /// Throws [PartyException]: `unreachable`, a relay refusal (`relay_full` once every relay refused, `rate_limited`,
-  /// `client_blocked`), `already_in_room` while the party is in a room or connecting, and `cancelled` when [leave] or
-  /// [close] cancels it.
+  /// Returns the room code. Throws [PartyException] with one of these codes:
+  ///
+  /// - `unreachable` when no relay could be reached, or none answered in time.
+  /// - A relay's refusal: `relay_full` once every relay refused, `rate_limited` or `client_blocked`.
+  /// - `already_in_room` while the party is in a room or connecting.
+  /// - `cancelled` when [leave] or [close] cancels the call.
   Future<String> create() async {
     final attempt = _beginAttempt();
     try {
@@ -206,11 +221,15 @@ final class WatchParty<T> {
     }
   }
 
-  /// Joins the room [code], as typed or pasted: separators and case don't matter.
+  /// Joins the room with [code], as the user typed or pasted it.
   ///
-  /// Throws [PartyException]: `invalid_code`, `room_not_found`, `room_full`, `room_locked`, `rate_limited`,
-  /// `client_blocked`, `unreachable`, `already_in_room` while the party is in a room or connecting, and `cancelled`
-  /// when [leave] or [close] cancels it.
+  /// Separators and case in [code] don't matter. Throws [PartyException] with one of these codes:
+  ///
+  /// - `invalid_code` when [code] isn't a room code.
+  /// - `room_not_found`, `room_full`, `room_locked`, `rate_limited` or `client_blocked` when the room can't be joined.
+  /// - `unreachable` when the relay couldn't be reached or didn't answer in time.
+  /// - `already_in_room` while the party is in a room or connecting.
+  /// - `cancelled` when [leave] or [close] cancels the call.
   Future<void> join(String code) async {
     _checkOpen();
     final normalized = normalizeCode(code);
@@ -760,8 +779,10 @@ final class WatchParty<T> {
     _chooseProbes.clear();
   }
 
-  /// Plays the offered file: `match` becomes `mismatched`. The offset stays 0 until the user sets one. Does nothing
-  /// without [PartyState.mismatch].
+  /// Plays the offered file.
+  ///
+  /// `match` becomes `mismatched`, and the offset stays 0 until the user sets one. Does nothing without
+  /// [PartyState.mismatch].
   void acceptMismatch() {
     _checkOpen();
     final mismatch = _mismatch;
@@ -773,7 +794,9 @@ final class WatchParty<T> {
     _refresh();
   }
 
-  /// Declines the offered file: `match` becomes `unavailable`. Does nothing without [PartyState.mismatch].
+  /// Declines the offered file.
+  ///
+  /// `match` becomes `unavailable`. Does nothing without [PartyState.mismatch].
   void declineMismatch() {
     _checkOpen();
     final mismatch = _mismatch;
@@ -785,11 +808,20 @@ final class WatchParty<T> {
     _refresh();
   }
 
-  /// Takes a file the user picked, from [PartyState.candidates] or anywhere else, while the room has media (SDK.md
-  /// §9.6). Its duration comes from [Candidate.durationMs] or one probe, and counts from 1 to 604800000 ms. Returns
-  /// false, changing nothing, when the probe gives no such duration, the candidate has neither, the room has no media,
-  /// the epoch changed meanwhile, or a later [choose] came. Otherwise [candidate] becomes [PartyState.choice], also
-  /// when it has the current choice's id; the attached adapter follows it only when attached with its ref.
+  /// Takes a file the user picked, from [PartyState.candidates] or anywhere else (SDK.md §9.6).
+  ///
+  /// The file's duration comes from [Candidate.durationMs] or from one probe. It counts only from 1 to 604800000 ms.
+  ///
+  /// Returns false, and changes nothing, in any of these cases:
+  ///
+  /// - The candidate has neither a duration nor a probe.
+  /// - The probe gives no duration in that range.
+  /// - The room has no media.
+  /// - The epoch changed meanwhile.
+  /// - A later [choose] came.
+  ///
+  /// Otherwise [candidate] becomes [PartyState.choice], also when it has the current choice's id, and the call
+  /// returns true. The attached adapter follows the new choice only when it was attached with the candidate's ref.
   Future<bool> choose(Candidate<T> candidate) async {
     _checkOpen();
     final media = _media;
@@ -819,10 +851,15 @@ final class WatchParty<T> {
     return true;
   }
 
-  /// Searches again for the current media: for a resolver that failed, a server that came back, or a user who wants
-  /// to search again. Does nothing without media or for the party's own media. Keeps what plays: the offset, the time
-  /// scale and the adapter stay. Without [PartyState.choice] it searches as for new media; with one it only replaces
-  /// [PartyState.candidates] with the resolver's new answer, ranked, for [choose].
+  /// Searches again for the current media.
+  ///
+  /// Use it for a resolver that failed, a server that came back, or a user who wants to search again. It does nothing
+  /// without media or for the party's own media.
+  ///
+  /// It keeps what plays: the offset, the time scale and the adapter stay. What it searches depends on the choice:
+  ///
+  /// - Without [PartyState.choice], it searches as for new media.
+  /// - With a choice, it only replaces [PartyState.candidates] with the resolver's new answer, ranked, for [choose].
   void resolveAgain() {
     _checkOpen();
     final media = _media;
@@ -842,14 +879,22 @@ final class WatchParty<T> {
   // ---------------------------------------------------------------------------------------------------------------
   // The player (SDK.md §10.2, §11)
 
-  /// Attaches the app's [player], which has the file of [ref] open: normally [PartyState.choice]'s ref, or as host
-  /// the ref passed to [setMedia]. The SDK commands it only while [ref] is the current choice's, `match` is matched or
-  /// mismatched and no [setMedia] of this party is pending; it follows each later choice with the same ref by itself.
-  /// Attach again after opening another file. With the adapter already attached, only its ref changes.
+  /// Attaches the app's [player], which has the file of [ref] open.
   ///
-  /// Works outside a room too: an adapter attached while idle or after [EndedEvent] is followed in the session the
-  /// next [create] or [join] starts. The party's end releases the adapter, so a player that keeps its file
-  /// open after [EndedEvent] is attached again.
+  /// [ref] is normally the ref of [PartyState.choice]. As host, it can also be the ref passed to [setMedia].
+  ///
+  /// The SDK commands the player only while all of these hold:
+  ///
+  /// - [ref] is the current choice's ref.
+  /// - The state of `match` is `matched` or `mismatched`.
+  /// - No [setMedia] of this party is pending.
+  ///
+  /// A later choice with the same ref is followed without another attach. Attach again after opening another file. If
+  /// this adapter is already attached, only its ref changes.
+  ///
+  /// Attaching works outside a room too. An adapter attached while idle or after [EndedEvent] is followed in the
+  /// session that the next [create] or [join] starts. The party's end releases the adapter, so if the player keeps its
+  /// file open after [EndedEvent], attach it again.
   void attachPlayer(PlayerAdapter player, T ref) {
     _checkOpen();
     final previous = _attached?.lane;
@@ -871,11 +916,13 @@ final class WatchParty<T> {
     _refresh();
   }
 
-  /// The user left the player, or the app went to the background: the SDK stops commanding the adapter and reports
-  /// `idle`, so the room doesn't wait for this participant. With [player], only when it is the one attached; else
-  /// this changes nothing.
+  /// Tells the SDK that the user left the player, or that the app went to the background.
   ///
-  /// Completes once no released adapter has a command queued or running; await it before disposing the player.
+  /// The SDK stops commanding the adapter and reports `idle`, so the room doesn't wait for this participant. When you
+  /// pass [player], this happens only if it is the attached adapter. Otherwise the call changes nothing.
+  ///
+  /// The returned future completes once no released adapter has a command queued or running. Await it before you
+  /// dispose of the player.
   Future<void> detachPlayer([PlayerAdapter? player]) {
     _checkOpen();
     final lane = _attached?.lane;
@@ -889,7 +936,9 @@ final class WatchParty<T> {
     return _releasedIdle();
   }
 
-  /// The player's state changed: the SDK reads it now instead of on the next tick.
+  /// Tells the SDK that the player's state changed.
+  ///
+  /// The SDK reads the player now instead of on the next tick.
   void playerChanged() {
     _checkOpen();
     _step();
@@ -1185,10 +1234,13 @@ final class WatchParty<T> {
   // ---------------------------------------------------------------------------------------------------------------
   // Offset (SDK.md §13)
 
-  /// Local position = room position + [offsetMs], from −604800000 to 604800000 (7 days).
-  /// Positive when the user's file is ahead (a longer intro). Applies at once and resets to 0 on every new media.
+  /// Sets the offset between the user's file and the room's media.
   ///
-  /// Throws [PartyException] `invalid_message` outside that range.
+  /// The local position is the room position plus [offsetMs]. The offset is positive when the user's file is ahead,
+  /// such as a file with a longer intro. It applies at once and resets to 0 on every new media.
+  ///
+  /// [offsetMs] ranges from −604800000 to 604800000, which is 7 days either way. Throws [PartyException]
+  /// `invalid_message` outside that range.
   void setOffset(int offsetMs) {
     _checkOpen();
     if (offsetMs < -maxOffsetMs || offsetMs > maxOffsetMs) {
@@ -1213,7 +1265,9 @@ final class WatchParty<T> {
   // ---------------------------------------------------------------------------------------------------------------
   // Commands (SDK.md §12). They don't wait for the relay; a refusal arrives as an [ErrorEvent].
 
-  /// Asks the room to play. Everyone starts together once ready.
+  /// Asks the room to play.
+  ///
+  /// Everyone starts together once ready.
   void play() {
     _checkControl();
     _send({'type': 'play'});
@@ -1250,7 +1304,7 @@ final class WatchParty<T> {
     if (lane != null) _refresh();
   }
 
-  /// Sets the room's rate, 0.5 to 2.0.
+  /// Sets the room's rate, from 0.5 to 2.0.
   void setRate(double rate) {
     _checkControl();
     if (!(rate >= minRate && rate <= maxRate)) {
@@ -1265,12 +1319,19 @@ final class WatchParty<T> {
     _hold('rate');
   }
 
-  /// Host: plays [media] in the room from [positionMs] of the host's own file. [ref] is the app's value that reopens
-  /// that file: while the room plays [media], [PartyState.choice] is a candidate with id `""`, this [ref] and the
-  /// media's `durationMs`, also after a host transfer or [detachPlayer], so a former host returns to it like a guest.
-  /// A player attached with [ref] isn't reopened: it follows once the new epoch arrives. Attach it before or after
-  /// this. The party keeps its own copy of [media]: changing its maps afterwards changes nothing. A `setMedia` lost on
-  /// a dropped connection is sent again once the party resumes, while it is still host.
+  /// Plays [media] in the room from [positionMs] of the host's own file.
+  ///
+  /// Only the host may call this. [ref] is the app's value that reopens that file.
+  ///
+  /// While the room plays [media], [PartyState.choice] is a candidate with id `""`, this [ref] and the media's
+  /// `durationMs`. It stays so after a host transfer or [detachPlayer], so a former host returns to the file like a
+  /// guest.
+  ///
+  /// A player attached with [ref] isn't reopened. It follows once the new epoch arrives, and you may attach it before
+  /// or after this call.
+  ///
+  /// The party keeps its own copy of [media], so changing its maps afterwards changes nothing. A `setMedia` lost on a
+  /// dropped connection is sent again once the party resumes, as long as the party is still host.
   void setMedia(Media media, T ref, {int positionMs = 0}) {
     _checkHost();
     final problem = checkMedia(media);
@@ -1287,39 +1348,51 @@ final class WatchParty<T> {
     _refresh();
   }
 
-  /// Host: stops the media; the room goes idle.
+  /// Stops the media, and the room goes idle.
+  ///
+  /// Only the host may call this.
   void clearMedia() {
     _checkHost();
     _send({'type': 'clearMedia'});
   }
 
-  /// Host: who may play, pause, seek and set the rate.
+  /// Sets who may play, pause, seek and set the rate.
+  ///
+  /// Only the host may call this.
   void setControl(Control mode) {
     _checkHost();
     _send({'type': 'setControl', 'mode': mode.name});
   }
 
-  /// Host: makes [peerId] the host.
+  /// Makes [peerId] the host.
+  ///
+  /// Only the host may call this.
   void transferHost(String peerId) {
     _checkHost();
     _checkParticipant(peerId);
     _send({'type': 'transferHost', 'peerId': peerId});
   }
 
-  /// Host: removes [peerId] from the room. They may join again unless the room is locked.
+  /// Removes [peerId] from the room.
+  ///
+  /// Only the host may call this. The removed participant may join again unless the room is locked.
   void kick(String peerId) {
     _checkHost();
     _checkParticipant(peerId);
     _send({'type': 'kick', 'peerId': peerId});
   }
 
-  /// Host: refuses new joins while [locked].
+  /// Locks the room when [locked] is true, and unlocks it when false.
+  ///
+  /// Only the host may call this. While the room is locked, it refuses new joins.
   void lock(bool locked) {
     _checkHost();
     _send({'type': 'lock', 'locked': locked});
   }
 
-  /// Host: ends the room for everyone. The party ends with [EndReason.ended] when the relay confirms.
+  /// Ends the room for everyone.
+  ///
+  /// Only the host may call this. The party ends with [EndReason.ended] when the relay confirms.
   void end() {
     _checkHost();
     _send({'type': 'end'});
@@ -1370,8 +1443,10 @@ final class WatchParty<T> {
   // ---------------------------------------------------------------------------------------------------------------
   // Position, leaving and closing
 
-  /// The room position at relay time now, in the media's timeline; null without media or before the first clock
-  /// sample. This player's own timeline is that + [PartyState.offsetMs].
+  /// The room position at the current relay time, in the media's timeline.
+  ///
+  /// Returns null without media or before the first clock sample. The position in this player's own file is this
+  /// value plus [PartyState.offsetMs].
   int? roomPositionMs() {
     final room = _room;
     final media = _media;
@@ -1380,8 +1455,10 @@ final class WatchParty<T> {
     return room.positionAt(relayNow, media.durationMs);
   }
 
-  /// Leaves the room: the party ends with [EndReason.left]. Cancels a [create] or [join] under way instead:
-  /// it fails with `cancelled` and the party goes back to idle. Does nothing outside a room.
+  /// Leaves the room, and the party ends with [EndReason.left].
+  ///
+  /// If a [create] or [join] is under way, this cancels it instead. The call fails with `cancelled`, and the party
+  /// goes back to idle. Outside a room, this does nothing.
   void leave() {
     final attempt = _attempt;
     if (attempt != null) {
@@ -1395,10 +1472,10 @@ final class WatchParty<T> {
     if (_connection == Connection.connected || _connection == Connection.reconnecting) _end(EndReason.left);
   }
 
-  /// Leaves the room if the party is in one and releases everything, the attached adapter included. The party can't
-  /// be used again.
+  /// Leaves the room, if the party is in one, and releases everything, the attached adapter included.
   ///
-  /// Completes once no released adapter has a command queued or running; await it before disposing the player.
+  /// The party can't be used again. The returned future completes once no released adapter has a command queued or
+  /// running. Await it before you dispose of the player.
   Future<void> close() {
     if (!_closed) {
       leave();

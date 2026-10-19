@@ -10,7 +10,7 @@ enum Phase {
   idle,
   paused,
 
-  /// Will play once everyone counted is ready.
+  /// The room will play once everyone counted is ready.
   waiting,
   playing,
 }
@@ -18,7 +18,7 @@ enum Phase {
 /// Who may send play, pause, seek and rate.
 enum Control { host, everyone }
 
-/// A participant's player as reported in `status` (SPEC.md §7.5).
+/// The state of a participant's player, as reported in `status` (SPEC.md §7.5).
 enum PlayerState {
   /// Not in the player.
   idle,
@@ -26,7 +26,7 @@ enum PlayerState {
   /// Opening, searching, seeking, or waiting on the user's choice.
   loading,
 
-  /// Able to play at once, close enough to the room's position that following it needs no seek.
+  /// Able to play at once, and close enough to the room's position that following it needs no seek.
   ready,
 
   /// Was playing, now stalled.
@@ -67,11 +67,15 @@ int _between(JsonObject read, String key, int min, int max) {
   return value >= min && value <= max ? value : throw FormatException('$key is outside $min to $max');
 }
 
-/// A participant's match: its state and its file's duration − the media's `durationMs`.
+/// A participant's match: its state, and how its file's duration differs from the media's.
+///
+/// [deltaMs] is the file's duration minus the media's `durationMs`.
 final class Match {
   const Match(this.state, [this.deltaMs]);
 
-  /// Reads a `match` object. Throws [FormatException] when it breaks SPEC.md §7.5.
+  /// Reads a `match` object.
+  ///
+  /// Throws [FormatException] when it breaks SPEC.md §7.5.
   factory Match.fromJson(Map<String, Object?> json) {
     final read = JsonObject(json);
     return Match(_byName(MatchState.values, read.string('state'), 'match state'), read.optInteger('deltaMs'));
@@ -107,7 +111,9 @@ final class Participant {
     required this.offsetMs,
   });
 
-  /// Reads a `participants` entry. Throws [FormatException] when it breaks SPEC.md §9.1.
+  /// Reads a `participants` entry.
+  ///
+  /// Throws [FormatException] when it breaks SPEC.md §9.1.
   factory Participant.fromJson(Map<String, Object?> json) {
     final read = JsonObject(json);
     final name = read.string('name');
@@ -128,7 +134,7 @@ final class Participant {
   final String peerId;
   final String name;
 
-  /// The app and version, `Example/1.31.0`.
+  /// The participant's app and version, such as `Example/1.31.0`.
   final String client;
   final bool host;
   final bool connected;
@@ -172,10 +178,16 @@ final class Room {
     required this.participants,
   });
 
-  /// Reads a snapshot: `joined.room`, or the snapshot members of a `room` message ([parseRoomMessage]). Throws
-  /// [FormatException] when it fails `snapshot.schema.json` (SDK.md §8): a member missing or of the wrong type, a value
-  /// out of range, an unknown enum value, a bad peer ID, name or client, not exactly one host, a bad `waitingOn`, or an
-  /// idle room away from 0.
+  /// Reads a snapshot: `joined.room`, or the snapshot members of a `room` message ([parseRoomMessage]).
+  ///
+  /// Throws [FormatException] when the snapshot fails `snapshot.schema.json` (SDK.md §8):
+  ///
+  /// - A member is missing or has the wrong type.
+  /// - A value is out of range, or an enum value is unknown.
+  /// - A peer ID, name or client is invalid.
+  /// - The room doesn't have exactly one host.
+  /// - `waitingOn` is invalid.
+  /// - The room is idle at a position other than 0.
   factory Room.fromJson(Map<String, Object?> json) {
     final read = JsonObject(json);
     final code = read.string('code');
@@ -212,16 +224,16 @@ final class Room {
   final int epoch;
   final Phase phase;
 
-  /// Media time the room holds at, or plays from at [atMs].
+  /// The media time the room holds at, or plays from at [atMs].
   final int positionMs;
 
-  /// Relay time; in `playing`, the moment playback runs from [positionMs].
+  /// A relay time. In `playing`, it is the moment playback runs from [positionMs].
   final int atMs;
   final double rate;
   final Control control;
   final bool locked;
 
-  /// Peer IDs the barrier waits for.
+  /// The peer IDs the barrier waits for.
   final List<String> waitingOn;
 
   /// Every participant, connected or not, in join order.

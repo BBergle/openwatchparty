@@ -12,7 +12,7 @@ enum MediaKind {
   movie,
   episode,
 
-  /// A file with no catalogue identity: a home video, a recording, a clip.
+  /// A file with no catalogue identity, such as a home video, a recording or a clip.
   video,
 }
 
@@ -25,7 +25,7 @@ final class Series {
   /// First-air year.
   final int? year;
 
-  /// Namespace → the series' IDs (`imdb`, `tmdb`, `tvdb`, …).
+  /// The series' IDs by namespace, such as `imdb`, `tmdb` and `tvdb`.
   final Map<String, String> ids;
 
   Map<String, Object?> toJson() => {
@@ -41,7 +41,7 @@ final class MediaFile {
 
   final int? sizeBytes;
 
-  /// The OpenSubtitles hash: 16 lower-case hex digits.
+  /// The OpenSubtitles hash, as 16 lower-case hex digits.
   final String? oshash;
 
   /// The file name without directories.
@@ -54,11 +54,14 @@ final class MediaFile {
       };
 }
 
-/// A media descriptor (SPEC.md §10): the title the room plays. Each participant resolves it to its own file.
+/// A media descriptor: the title the room plays (SPEC.md §10).
 ///
-/// [parseMedia] decodes one, keeping unknown `ids` namespaces and every `ext` member and dropping other unknown
-/// members. Two descriptors are equal when their JSON is. `setMedia` keeps its own deep copy, so changing the maps
-/// passed in afterwards changes nothing in the party.
+/// Each participant resolves the descriptor to its own file.
+///
+/// [parseMedia] decodes a descriptor. It keeps unknown `ids` namespaces and every `ext` member, and drops other
+/// unknown members. Two descriptors are equal when their JSON is equal.
+///
+/// `setMedia` keeps its own deep copy, so changing the maps passed in afterwards changes nothing in the party.
 final class Media {
   const Media({
     required this.kind,
@@ -81,13 +84,16 @@ final class Media {
   /// Release year.
   final int? year;
 
-  /// Namespace → ID: `imdb`, `tmdb`, `tvdb`, `plex`, `anilist`, `anidb`, `kitsu`, `mal`. For an episode, its own IDs.
+  /// The title's IDs by namespace.
+  ///
+  /// The known namespaces are `imdb`, `tmdb`, `tvdb`, `plex`, `anilist`, `anidb`, `kitsu` and `mal`. For an episode,
+  /// these are the episode's own IDs.
   final Map<String, String> ids;
 
-  /// Required for an episode.
+  /// The episode's series, required for an episode.
   final Series? series;
 
-  /// As the setter's source numbers it; 0 for specials.
+  /// The season number as the setter's source numbers it, with 0 for specials.
   final int? season;
   final int? episode;
 
@@ -95,7 +101,7 @@ final class Media {
   final int durationMs;
   final MediaFile? file;
 
-  /// App-private hints, keyed by the app's reverse-DNS name (`com.example`). Raw JSON.
+  /// App-private hints as raw JSON, keyed by the app's reverse-DNS name, such as `com.example`.
   final Map<String, Object?>? ext;
 
   Map<String, Object?> toJson() => {
@@ -121,8 +127,10 @@ final class Media {
   String toString() => 'Media(${kind.name}, $title, ${durationMs}ms)';
 }
 
-/// Null when [media] passes the checks `setMedia` makes before sending (SDK.md §9.7, sizes measured on the SDK's own
-/// compact JSON), else the first rule it breaks. An app trims `file.name` or `ext` and checks again.
+/// Checks [media] the way `setMedia` does before sending it (SDK.md §9.7).
+///
+/// Returns null when [media] passes, or else the first rule it breaks. Sizes are measured on the SDK's own compact
+/// JSON. When a check fails, an app trims `file.name` or `ext` and checks again.
 String? checkMedia(Media media) {
   final problem = _checkValues(media);
   if (problem != null) return problem;
@@ -132,8 +140,10 @@ String? checkMedia(Media media) {
   return null;
 }
 
-/// Reads a decoded JSON descriptor with the receive checks of SDK.md §9.7: types and values, not the send-only sizes.
-/// The result's maps are unmodifiable copies. Throws [PartyException] `invalid_message` when [json] fails them.
+/// Reads a decoded JSON descriptor and applies the receive checks of SDK.md §9.7.
+///
+/// Those checks cover types and values, but not the send-only sizes. The result's maps are unmodifiable copies.
+/// Throws [PartyException] `invalid_message` when [json] fails the checks.
 Media parseMedia(Object? json) {
   try {
     return parseReceivedMedia(json);

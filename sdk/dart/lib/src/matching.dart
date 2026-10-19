@@ -3,15 +3,20 @@ import 'dart:async';
 import 'cancellation.dart';
 import 'media.dart';
 
-/// Opens a file, learns its duration and closes it again. Returns the duration, or null when the file doesn't open.
-/// Release what you opened when [cancel] fires.
+/// Opens a file, learns its duration and closes it again.
+///
+/// Returns the duration, or null when the file doesn't open. Release what you opened when [cancel] fires.
 typedef Probe = Future<int?> Function(Cancellation cancel);
 
-/// The app's search (SDK.md §9.2). It decides which files are the media: the SDK ranks what it returns and matches
-/// by duration, and never drops a candidate for its title or file hints.
+/// The app's search for the user's own copy of the room's media (SDK.md §9.2).
+///
+/// The resolver decides which files are the media. The SDK ranks what it returns and matches by duration. It never
+/// drops a candidate for its title or file hints.
 abstract interface class Resolver<T> {
-  /// The candidates for [media], once, in the app's own order of preference. A resolver that throws or takes longer
-  /// than 30 s returned no candidates. [cancel] fires when the SDK no longer needs the answer.
+  /// Returns the candidates for [media], in the app's own order of preference.
+  ///
+  /// The SDK calls it once per search. A resolver that throws or takes longer than 30 seconds returned no candidates.
+  /// [cancel] fires when the SDK no longer needs the answer.
   Future<List<Candidate<T>>> resolve(Media media, Cancellation cancel);
 }
 
@@ -27,7 +32,7 @@ final class Candidate<T> {
     this.probe,
   });
 
-  /// The app's key for it, unique among the candidates.
+  /// The app's key for this candidate, unique among the candidates.
   final String id;
 
   /// The app's own value for the candidate, handed back with the choice so the app opens the file without a lookup.
@@ -39,14 +44,19 @@ final class Candidate<T> {
   final String? oshash;
   final String? name;
 
-  /// How to learn the duration when [durationMs] is unknown. Without either, the candidate is never chosen.
+  /// How to learn the duration when [durationMs] is unknown.
+  ///
+  /// A candidate with neither a duration nor a probe is never chosen.
   final Probe? probe;
 
   @override
   String toString() => 'Candidate($id${durationMs == null ? '' : ', ${durationMs}ms'})';
 }
 
-/// A candidate of the walk and its duration − the media's `durationMs`, once known (SDK.md §9.5).
+/// A candidate of the walk, with its delta once known (SDK.md §9.5).
+///
+/// The delta, [deltaMs], is the candidate's duration minus the media's `durationMs`. It is null while the duration is
+/// unknown.
 final class Ranked<T> {
   const Ranked(this.candidate, this.deltaMs);
 

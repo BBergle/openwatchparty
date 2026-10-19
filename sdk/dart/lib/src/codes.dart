@@ -28,7 +28,10 @@ String? normalizeCode(String input) {
 /// Whether [code] is a code as the relay writes it: exactly 6 symbols of [codeAlphabet] (SPEC.md §5.1).
 bool isRelayCode(String code) => normalizeCode(code) == code;
 
-/// [code] normalized and shown in two groups, `K7M-Q2X`. Throws [PartyException] `invalid_code` when it isn't a code.
+/// Formats a room code for display, such as `K7M-Q2X`.
+///
+/// [code] is normalized first, so separators and case don't matter, and shown in two groups of three symbols. Throws
+/// [PartyException] `invalid_code` when [code] isn't a room code.
 String formatCode(String code) {
   final normalized = normalizeCode(code);
   if (normalized == null) throw const PartyException(ErrorCode.invalidCode, 'not a room code');

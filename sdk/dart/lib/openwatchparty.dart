@@ -1,8 +1,13 @@
 /// Open Watch Party: join a watch party room by its code and keep your own player in sync with everyone in it.
 ///
-/// Construct a [WatchParty] with a [Relays] list, your app's `client` name, the user's name and a [Resolver]; call
-/// [WatchParty.create] or [WatchParty.join]; open [PartyState.choice] and call [WatchParty.attachPlayer] with your
-/// [PlayerAdapter] and the choice's ref. The SDK does the rest.
+/// To take part in a room:
+///
+/// 1. Construct a [WatchParty] with a [Relays] list, your app's `client` name, the user's name and a [Resolver].
+/// 2. Call [WatchParty.create] to create a room, or [WatchParty.join] to join one by its code.
+/// 3. Open the file in [PartyState.choice], then call [WatchParty.attachPlayer] with your [PlayerAdapter] and the
+///    choice's ref.
+///
+/// The SDK does the rest.
 library;
 
 export 'src/cancellation.dart' show Cancellation;

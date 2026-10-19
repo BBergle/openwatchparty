@@ -8,21 +8,30 @@ import 'public_relays.dart';
 import 'relay_list.dart';
 import 'transport.dart';
 
-/// Where parties find relays (SDK.md §3): the public relays, or one self-hosted relay. An app keeps one and passes it
-/// to every party; the list and its refresh schedule belong to it.
+/// Where parties find relays: the public relays, or one self-hosted relay (SDK.md §3).
+///
+/// An app keeps one [Relays] and passes it to every party. The list and its refresh schedule belong to this object.
 final class Relays {
   Relays._(this._list, this._httpGet);
 
-  /// The public relays, starting from the list compiled into the SDK. Each valid list a refresh reads from
-  /// [publicSource] replaces it; nothing else does.
+  /// The public relays, starting from the list compiled into the SDK.
+  ///
+  /// Each valid list that a refresh reads from [publicSource] replaces the list in use. Nothing else replaces it.
   factory Relays.public({HttpGet? httpGet}) =>
       Relays._(parseRelayList(jsonDecode(publicRelaysJson)), httpGet ?? defaultHttpGet);
 
-  /// The self-hosted relay at [baseUrl], its `https://` or `http://` base (`https://relay.example.com`), for every
-  /// room: its WebSocket URL is the base with `wss://` or `ws://` for its scheme, plus `/v1/ws`. [list] is that one
-  /// relay, with id `custom`, the base as its name and every code symbol; nothing is ever fetched. Throws
-  /// [PartyException] `invalid_message` when [baseUrl], without trailing `/`s, isn't lower-case `https://` or
-  /// `http://` followed by a host, or its WebSocket URL isn't printable ASCII without `?` or `#`.
+  /// The self-hosted relay at [baseUrl], used for every room.
+  ///
+  /// [baseUrl] is the relay's `https://` or `http://` base, such as `https://relay.example.com`. The relay's WebSocket
+  /// URL is that base with `wss://` for `https://` or `ws://` for `http://`, plus `/v1/ws`.
+  ///
+  /// [list] holds that one relay. Its id is `custom`, its name is the base and it owns every code symbol. Nothing is
+  /// ever fetched.
+  ///
+  /// Throws [PartyException] `invalid_message` in either of these cases:
+  ///
+  /// - [baseUrl], without trailing `/`s, isn't a lower-case `https://` or `http://` followed by a host.
+  /// - The WebSocket URL isn't printable ASCII, or it contains `?` or `#`.
   factory Relays.at(String baseUrl) {
     var base = baseUrl;
     while (base.endsWith('/')) {
@@ -53,14 +62,18 @@ final class Relays {
   /// The list in use.
   List<Relay> get list => _list;
 
-  /// The relay that owns [code] (normalized as `join` does), or null for an invalid code or a symbol no relay owns.
+  /// The relay that owns [code], or null for an invalid code or a first symbol no relay owns.
+  ///
+  /// [code] is normalized as `join` does it.
   Relay? relayFor(String code) {
     final normalized = normalizeCode(code);
     return normalized == null ? null : routeCode(normalized, _list);
   }
 
-  /// Fetches the public list now (SDK.md §3.3). False when the source gave no valid list; the list in use stays then.
-  /// A self-hosted relay fetches nothing and returns true.
+  /// Fetches the public list now (SDK.md §3.3).
+  ///
+  /// Returns false when the source gave no valid list, and the list in use stays. A self-hosted relay fetches nothing
+  /// and returns true.
   Future<bool> refresh() async {
     final httpGet = _httpGet;
     return httpGet == null || await _fetch(httpGet);
