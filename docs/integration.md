@@ -1,16 +1,31 @@
 # Integration guide
 
-This guide takes a player app to a working Open Watch Party (OWP) room with the TypeScript, Dart, Kotlin or Swift SDK. The app writes a player adapter, a resolver to match others' media, and the UI. [The SDK spec](../spec/SDK.md) holds the rules.
+This guide takes your player app from nothing to a working Open Watch Party (OWP) room. It covers the TypeScript, Dart, Kotlin and Swift SDKs, and most steps show the code in all four languages.
 
-Install from the SDK README for your language: [TypeScript](../sdk/typescript/README.md), [Dart](../sdk/dart/README.md), [Kotlin](../sdk/kotlin/README.md) or [Swift](../sdk/swift/README.md). A complete small app is in [the web example](../examples/web/README.md).
+Your app writes three parts: a player adapter that lets the SDK drive your player, a resolver that finds the user's own copy of the media others share, and the UI. The rules behind every step are in [the SDK spec](../spec/SDK.md).
+
+Install the SDK as the README for your language describes: [TypeScript](../sdk/typescript/README.md), [Dart](../sdk/dart/README.md), [Kotlin](../sdk/kotlin/README.md) or [Swift](../sdk/swift/README.md). A complete small app is in [the web example](../examples/web/README.md).
+
+Steps 1 to 4 set up every party. Steps 5 and 6 are the host's flow and the guest's flow. Steps 7 to 11 cover controls, leaving, events and errors, relays, and the public relay.
 
 ## How a room works
 
-The relay runs the room: its phase (`idle`, `paused`, `waiting`, `playing`), position, rate, host and settings. Each client plays its own copy, and room positions are in the timeline of the host's reference file, the one whose duration the shared descriptor carries.
+The relay runs the room. It holds the room's phase, position and rate, which participant is the host, and the room's settings. The phase is one of `idle`, `paused`, `waiting` or `playing`.
+
+Each client plays its own copy of the media. Room positions are in the timeline of the host's reference file, which is the file whose duration the shared media descriptor carries.
 
 ## 1. Create the party
 
-Construct the party with a `Relays` object, a true `client` name and the user's display name. Add your resolver (step 3) to match other participants' media. In Kotlin the party calls your adapter and resolver on the scope you pass. In Swift the party is `@MainActor`: it calls your adapter and resolver on the main actor, and `states()`/`events()` each return a new `AsyncStream`; the constructor and `formatCode` throw (`try`). See [relay list](../spec/SDK.md#3-relay-list) and [per-language idioms](../spec/SDK.md#168-per-language-idioms).
+The party is the SDK object your app talks to. Its constructor takes four things:
+
+- A `Relays` object says which relays to use, as step 10 describes. Create one per app and pass it to every party.
+- A true `client` name gives your app's published name and version, as step 11 describes.
+- A `name` is the user's display name.
+- Your resolver from step 3 matches the media that other participants share.
+
+If `client` or `name` is bad, the constructor throws `invalid_message`.
+
+Subscribe before you call `create` or `join`, because the party replays nothing. Then `create` opens a new room and returns its room code, which `formatCode` formats for display. To enter an existing room, call `join(code)` instead.
 
 TypeScript:
 
@@ -93,11 +108,43 @@ let code = try await party.create() // or: try await party.join(typedCode)
 try showCode(formatCode(code)) // "K7M-Q2X"
 ```
 
-`join(code)` takes the code as typed and normalizes it (separators removed, upper-cased) to route by its first symbol. Anything that isn't then 6 symbols from `23456789ABCDEFGHJKMNPQRSTUVWXYZ` is `invalid_code` before any network use. The relay applies the same normalization to `join` and `resume` codes it receives ([room codes](../spec/SPEC.md#51-room-codes)), which matters only to apps that speak the wire directly. A bad `client` or `name` throws `invalid_message` from the constructor.
+### Kotlin and Swift
+
+In Kotlin, the party calls your adapter and resolver on the scope you pass. The sample's scope is single-threaded, which on Android means a Main scope.
+
+In Swift, the party is `@MainActor`, so it calls your adapter and resolver on the main actor. `states()` and `events()` each return a new `AsyncStream` that gets every change. The constructor and `formatCode` throw, so you call them with `try`.
+
+The SDK spec has the details on the [relay list](../spec/SDK.md#3-relay-list) and the [per-language idioms](../spec/SDK.md#168-per-language-idioms).
+
+### Room codes
+
+`join` takes the code as the user typed it. It removes separators and upper-cases the rest, so that it can route the code by its first symbol. If the result isn't 6 symbols from `23456789ABCDEFGHJKMNPQRSTUVWXYZ`, the call fails with `invalid_code` before any network use.
+
+The relay applies the same normalization to the `join` and `resume` codes it receives, as [room codes](../spec/SPEC.md#51-room-codes) describes. This matters only to apps that speak the wire protocol directly.
 
 ## 2. Write the player adapter
 
-Write an adapter over your player. Reads must be cheap and synchronous. Each command must finish or throw, and `play` throws when the player refuses to start. While it then stays paused, the SDK reports `loading` and emits `playBlocked` (TypeScript), `PlayBlockedEvent` (Dart and Swift) or `PartyEvent.PlayBlocked` (Kotlin); see step 9. A `play` that swallows the refusal is reported `ready` while paused. Optional `seekAccuracyMs` (default 0) says how far a seek may land: the keyframe distance for a keyframe-only player, a very large value for one that cannot seek. See [player state](../spec/SDK.md#102-player-state).
+The player adapter is how the SDK reads your player's state and sends it commands.
+
+Each kind of member has one rule:
+
+- Reads, such as `positionMs` and `paused`, must be cheap and synchronous.
+- Commands, such as `play` and `seek`, must either finish or throw.
+
+Two optional members tune how the SDK follows the room:
+
+- `setRate` changes the player's speed. Without it, the SDK only seeks. In Dart, Kotlin and Swift, also return `true` from `canSetRate`.
+- `seekAccuracyMs` says how far from its target a seek may land, and defaults to 0. For a player that seeks only to keyframes, use the keyframe distance. For one that can't seek at all, use a very large value.
+
+### When the player refuses to start
+
+When the player refuses to start, `play` must throw. While the player then stays paused, the SDK reports it as `loading` and emits a play-blocked event, which step 9 handles. The event is `playBlocked` in TypeScript, `PlayBlockedEvent` in Dart and Swift, and `PartyEvent.PlayBlocked` in Kotlin.
+
+If `play` swallows the refusal instead, the SDK reports the player as `ready` while it sits paused. The rules are in [player state](../spec/SDK.md#102-player-state).
+
+### The adapter in code
+
+The TypeScript sample also calls `playerChanged` when the player changes. That is optional, but it gets changes to the room sooner.
 
 TypeScript:
 
@@ -191,7 +238,11 @@ final class ExampleAdapter: PlayerAdapter {
 }
 ```
 
-On the web, `attachVideo(party, video, ref)` wraps an `HTMLMediaElement`. It routes the element's controls to the party. `videoAdapter(video)` makes the adapter alone, for pages the app does not own.
+### On the web
+
+On the web, `attachVideo(party, video, ref)` wraps an `HTMLMediaElement` and routes the element's controls to the party. Call it once the element has the chosen file open, as in step 4. It returns a detach function, which you await before you dispose of the element.
+
+For pages your app doesn't own, `videoAdapter(video)` makes the adapter alone.
 
 ```ts
 import { attachVideo } from "openwatchparty";
@@ -201,17 +252,74 @@ const detach = attachVideo(party, video, party.state.choice!.ref); // once the e
 // later: await detach(); // before disposing of the element
 ```
 
-For a player controlled over IPC, reads return values cached from the player's property-change events, never waiting on the socket. Commands await the player's reply; a reply can precede its property event, so set the cached `paused` after it. A seek's reply also precedes the landing, so `seek` waits for the report that it landed, under a timeout. A refused command rejects, so `play` throws as above. Call `party.playerChanged()` on changes other than position.
+### Players controlled over IPC
 
-In a browser extension on a page the app doesn't own, put `videoAdapter(video)` on the main `<video>` (the largest on screen is a workable rule). On navigation the page may replace the element: release the old adapter with `detachPlayer(adapter)` and attach a new one under the same ref — a string key for the page's title, so refs compare equal across reads. Release it while the same element plays an ad, by the site's markers, or the SDK plays whatever the element shows. With no resolver the match stays `unavailable` until the user opens the title and the app calls `choose` with the element's duration; attach only while the page's key is the chosen ref. Call `playerChanged()` from capturing media-event listeners on `document`, since `videoAdapter` doesn't.
+If your app controls the player over IPC, the adapter still answers reads without waiting:
+
+- Reads return values cached from the player's property-change events. They never wait on the socket.
+- Commands await the player's reply. A reply can arrive before its property event, so set the cached `paused` after the reply.
+- A seek's reply also arrives before the seek lands. So `seek` waits for the report that it landed, under a timeout.
+- A refused command rejects, so `play` throws as described above.
+- Call `party.playerChanged()` on any change other than position.
+
+### Browser extensions
+
+A browser extension runs on pages your app doesn't own, so it uses `videoAdapter`:
+
+- Put the adapter on the page's main `<video>` element. The largest one on screen is a workable rule.
+- Use a string key for the page's title as the ref, so that refs compare equal across reads.
+- On navigation, the page may replace the element. Release the old adapter with `detachPlayer(adapter)`, and attach a new one under the same ref.
+- Release the adapter while the same element plays an ad, which the site's markers show. Otherwise the SDK plays whatever the element shows.
+- With no resolver, the match stays `unavailable` until the user opens the title and your app calls `choose` with the element's duration. Attach only while the page's key is the chosen ref.
+- `videoAdapter` doesn't call `playerChanged()`, so call it from capturing media-event listeners on `document`.
 
 ## 3. Write the resolver
 
-The resolver runs once per new media and returns the library files that are this title; it may also return near misses (no duration, no probe) for the choose list, which are never chosen automatically. The SDK cancels it when the media changes or the party ends. A throw, or a call longer than 30 seconds, counts as no candidates and emits `ResolveFailed`. When your app finds more files, call `resolveAgain()`: without a choice it searches again; with one it only replaces `state.candidates`.
+The resolver finds the user's own copy of the room's media. The SDK runs it once per new media, passing the room's media descriptor. It returns candidates: the files in your library that are this title, each with its duration or a probe that opens the file to learn it.
 
-Identity is the resolver's job; the SDK only ranks candidates and compares durations. `sameTitle(a, b)` needs a shared catalogue ID for a movie, and for an episode a shared own ID, or a shared series ID with equal season and episode — unless some namespace holds a different own ID on each side, which rules out the number match; an episode with no own ID can still match on numbers. A `video` needs the same file hash, or size and name. It never reads titles, so a movie or episode without IDs matches nothing through it alone. See [same title](../spec/SDK.md#93-same-title).
+### What the SDK expects
 
-The samples resolve in two steps over stand-ins for your library (`LibraryItem`, `Show`, `Library`). Step 1 returns files sharing a catalogue ID with the media or its series, checked with `sameTitle`, whatever their titles. The title search always runs (it collects the near misses), but only without an ID match does step 2 use it — an episode searched by its show's title, never its own — taking movies with the same folded title and a year within one, and episodes with the same show, season and episode, minus any item with a conflicting ID. The filter runs only then because ranking prefers durations over resolver order: next to ID matches, a title-only copy could match first. A title filed under a different name, without a shared ID, is beyond both steps; the app's own search feeds `choose`. The samples also define `describe` (step 5's descriptor), `playable` (a matchable candidate) and `chooseList` (step 6).
+- The resolver may also return near misses for the choose list. A near miss has no duration and no probe, so the SDK never chooses it automatically.
+- The SDK cancels the resolver when the media changes or the party ends.
+- A throw, or a call longer than 30 seconds, counts as no candidates, and the SDK emits `ResolveFailed`.
+- When your app finds more files, call `resolveAgain()`. Without a choice it searches again, and with one it only replaces `state.candidates`.
+
+### Deciding what is the same title
+
+Deciding which files are this title is the resolver's job. The SDK only ranks the candidates and compares their durations.
+
+`sameTitle(a, b)` helps you decide. It compares two descriptors by their IDs or their file details:
+
+| Kind | Same title when |
+|---|---|
+| Movie | The two share a catalogue ID. |
+| Episode | The two share an own ID, or share a series ID and have equal season and episode numbers. |
+| Video | The two have the same file hash, or the same size and name. |
+
+The episode number match has one exception. If some namespace holds a different own ID on each side, the numbers don't count. An episode with no own ID can still match on numbers.
+
+`sameTitle` never reads titles, so a movie or episode without IDs matches nothing through it alone. The full rule is in [same title](../spec/SDK.md#93-same-title).
+
+### How the samples resolve
+
+The samples work over stand-ins for your library: `LibraryItem`, `Show` and `Library`. They resolve in two steps:
+
+1. Step 1 returns the files that share a catalogue ID with the media or its series, whatever their titles. `sameTitle` checks each one.
+2. Step 2 runs only when step 1 found no ID match. From a title search, it takes movies with the same folded title and a year at most one apart, and episodes with the same show, season and episode. It drops any item with a conflicting ID.
+
+The title search always runs, because it also collects the near misses. It looks for an episode by its show's title, never by its own.
+
+Step 2 uses the search results only without an ID match, because ranking prefers durations over resolver order. Next to ID matches, a copy that matches only by title could match first.
+
+A title filed under a different name, without a shared ID, is beyond both steps. For those titles, your app's own search feeds `choose`.
+
+The samples also define three helpers that later steps use:
+
+| Helper | What it does |
+|---|---|
+| `describe` | Builds the descriptor your app sends as host in step 5. |
+| `playable` | Turns a library item into a candidate the SDK can match. |
+| `chooseList` | Lists the candidates for the user to choose from in step 6. |
 
 TypeScript:
 
@@ -851,11 +959,32 @@ func chooseList(
 }
 ```
 
-Treat descriptors as untrusted input: search terms only, never a path, URL, host, shell or SQL fragment. Never open `file.name`. Anyone can forge `ext`, so use it only for lookups in your own library. Show titles and names as plain text. See [descriptors are untrusted](../spec/SDK.md#97-descriptors-are-untrusted).
+### Treat descriptors as untrusted
+
+A descriptor comes from another participant through the relay, so treat it as untrusted input:
+
+- Use its values as search terms only. Never use them as a path, URL, host, shell or SQL fragment.
+- Never open `file.name`.
+- Anyone can forge `ext`, so use it only for lookups in your own library.
+- Show titles and names as plain text.
+
+The rules are in [descriptors are untrusted](../spec/SDK.md#97-descriptors-are-untrusted).
 
 ## 4. Open `state.choice`
 
-When `state.choice` changes, open `choice.ref` (unless open) and `attachPlayer(player, ref)`, skipping both if already attached with that ref. Open one file at a time; if the choice changed mid-open, open the newer one instead. The party's end releases the player, so clear the attached ref on `Ended` (in Kotlin, watch `events`: `state` can skip `ENDED`).
+When the SDK settles on a file for this user, it publishes it as `state.choice`. Your app then opens that file and attaches the player to it.
+
+Each time `state.choice` changes:
+
+1. If the player is already attached with the choice's ref, stop.
+2. Open `choice.ref`, unless the player already has it open.
+3. Call `attachPlayer(player, ref)`.
+
+Open one file at a time. If the choice changes while a file is opening, open the newer one instead.
+
+The party's end releases the player, so clear your attached ref on `Ended`. In Kotlin, watch `events` for it, because `state` can skip the `ENDED` connection state.
+
+The samples do this in `openChoice`. It also checks the `away` flag from step 8, so that nothing opens or attaches while the user is away.
 
 TypeScript:
 
@@ -968,9 +1097,30 @@ Task { for await event in endings where event is EndedEvent { attached = nil } }
 
 ## 5. Host flow: share media
 
-The host calls `setMedia(media, ref)` for the file it will play. An optional start `positionMs` is in that file. `setMedia` and `attachPlayer(player, ref)` can come in either order once the file is open. Both take the same `ref` (in TypeScript, the same object; in Swift, an equal value, as refs compare with `==`). `clearMedia()` stops the media for everyone.
+As host, your app shares the media that everyone watches. It describes the file in a media descriptor and sends it with `setMedia`.
 
-Build the descriptor from your library entry, as `describe` does in step 3. Required: `kind`, a non-empty `title`, `durationMs`, and for an episode `series.title`; all else is optional. Sparse metadata is fine: an untitled episode sends a stand-in such as `Episode 5`, and empty `ids` may be omitted. Keep the real kind — `video` is only for a file with no catalogue identity (a home video, a clip); a movie or episode without IDs stays `movie`/`episode`. ID values are non-empty strings, numbers included (`"tmdb": "1396"`; a series' is a TV ID, a movie's a movie ID), and `plex` is a `plex://` GUID. V1 has no field for absolute episode numbers or alternate titles, so a series' anime-namespace IDs matter more than numbers. File hints and `ext` under your reverse-DNS name are optional. Nothing may locate or fetch media. See [the media descriptor](../spec/SPEC.md#10-media-descriptor).
+### Sending the media
+
+- Call `setMedia(media, ref)` for the file you will play. The optional start `positionMs` is a position in that file.
+- Once the file is open, you can call `setMedia` and `attachPlayer` in either order.
+- Both calls take the same `ref`. In TypeScript that means the same object. In Swift it means an equal value, because refs compare with `==`.
+- `clearMedia()` stops the media for everyone.
+
+### Building the descriptor
+
+Build the descriptor from your library entry, as `describe` does in step 3. The required fields are `kind`, a non-empty `title` and `durationMs`, plus `series.title` for an episode. Everything else is optional.
+
+Sparse metadata is fine. An untitled episode sends a stand-in title such as `Episode 5`, and you may omit empty `ids`.
+
+Keep the real kind. `video` is only for a file with no catalogue identity, such as a home video or a clip. A movie or episode without IDs stays a `movie` or an `episode`.
+
+ID values are non-empty strings, numbers included, as in `"tmdb": "1396"`. A series' `tmdb` ID is its TV ID, and a movie's is its movie ID. A `plex` ID is a `plex://` GUID.
+
+V1 has no field for absolute episode numbers or alternate titles, so a series' anime-namespace IDs matter more than its numbers.
+
+File hints are optional, and so is an `ext` member under your reverse-DNS name. Nothing in the descriptor may locate or fetch media. The full format is in [the media descriptor](../spec/SPEC.md#10-media-descriptor).
+
+Before you send, check the descriptor with `checkMedia`. It returns null, or nil in Swift, when the relay accepts the descriptor, and otherwise the first rule it breaks.
 
 TypeScript:
 
@@ -1044,15 +1194,25 @@ if problem == nil { try party.setMedia(media, ref: item) } // positionMs: 0 by d
 
 ## 6. Guest flow, matching and the offset
 
-A guest calls `join(code)`. The SDK routes the code to its relay. It searches with your resolver when the room has media. The outcomes are in [the spec](../spec/SDK.md#96-outcomes):
+A guest calls `join` with the room code. The SDK routes the code to its relay and, when the room has media, searches with your resolver. This step covers the outcomes of that search, what to show the user, and the offset.
 
-- **Matched**: a file within 1500 ms of the reference duration. `state.choice` is set; open it (step 4).
-- **Mismatch**: no file within 1500 ms but some file opened. `state.mismatch` holds the closest file and its `deltaMs` (own duration minus reference). Ask the user, then answer once.
-- **Unavailable**: no candidate opened, or the party has no resolver. `choose` still works, with a candidate from `state.candidates` or anywhere else.
+### Outcomes
 
-A matched episode can still be the wrong one: the walk stops at the first candidate within 1500 ms, so under different numbering another episode of similar length matches silently. Always show the matched file — its own title, season, episode and file name — next to the room's `media`, and offer the choose list; choosing keeps the current offset.
+The search ends in one of three outcomes, which [the spec](../spec/SDK.md#96-outcomes) defines:
 
-TypeScript:
+| Outcome | When it happens | What your app does |
+|---|---|---|
+| Matched | A file is within 1.5 seconds of the reference duration. | Opens `state.choice`, as in step 4. |
+| Mismatch | No file is within 1.5 seconds, but some file opened. | Asks the user about `state.mismatch`, then answers once. |
+| Unavailable | No candidate opened, or the party has no resolver. | Lets the user pick a file for `choose`. |
+
+On a mismatch, `state.mismatch` holds the closest file and its `deltaMs`, which is the file's own duration minus the reference duration.
+
+When the outcome is unavailable, `choose` still works, with a candidate from `state.candidates` or from anywhere else.
+
+### Answering a mismatch
+
+Answer a mismatch with one of two calls: `acceptMismatch` plays the offered file, and `declineMismatch` sits out this title. With any outcome, the user can also pick a file from the choose list or from your app's own search, which you pass to `choose`.
 
 ```ts
 // state.mismatch is set: ask the user, then answer with one of these.
@@ -1064,15 +1224,34 @@ await party.choose(playable(library, found)); // or a file from the app's own se
 party.setOffset(party.state.offsetMs + 1000);
 ```
 
-Dart uses the same calls, `chooseList(party, library, show)` included. Kotlin reads the state through `.value` and passes its scope to `chooseList(party, library, mainScope, show)`: `party.setOffset(party.state.value.offsetMs + 1000)`. Swift uses the same calls, with `try` on the throwing ones and `await` on `choose`: `_ = await party.choose(playable(library, found))` and `try party.setOffset(party.state.offsetMs + 1000)`.
+The other languages make the same calls, with a few differences:
 
-A different cut plays in sync with an offset (positive for a longer intro), reset on new media. Offer 100 ms and 1 s steps, a reset, and the mismatch's `deltaMs` as a hint. See [offset](../spec/SDK.md#13-offset).
+- Dart is the same, `chooseList(party, library, show)` included.
+- Kotlin reads the state through `.value` and passes its scope to `chooseList(party, library, mainScope, show)`. Its offset call is `party.setOffset(party.state.value.offsetMs + 1000)`.
+- Swift puts `try` on the throwing calls and `await` on `choose`, as in `_ = await party.choose(playable(library, found))` and `try party.setOffset(party.state.offsetMs + 1000)`.
+
+### Showing the matched file
+
+A matched episode can still be the wrong one. The SDK walks the ranked candidates and stops at the first one within 1.5 seconds. So under different numbering, another episode of similar length matches silently.
+
+Always show the matched file next to the room's `media`, with its own title, season, episode and file name. Offer the choose list too. Choosing a file keeps the current offset.
+
+### The offset
+
+A different cut of the title can play in sync with an offset. The local position is the room position plus the offset, so a longer intro needs a positive offset. The offset resets on new media.
+
+Offer offset steps of 100 milliseconds and 1 second, a reset, and the mismatch's `deltaMs` as a hint. The rules are in [offset](../spec/SDK.md#13-offset).
 
 ## 7. Controls and host tools
 
-Play, pause, seek and rate need `canControl` and media. Without them they throw `forbidden` or `invalid_message`. The host-only calls need the host (else `forbidden`), not media. Outside a room, these calls throw `not_in_room`. Dart and Kotlin differ in the enum names: `Control.everyone` / `Control.host`, `Control.EVERYONE` / `Control.HOST`. In Swift they are synchronous and throw (`try party.play()`); `leave()` doesn't throw.
+Your app's controls send the user's presses to the party, never straight to the player. Who may make each call depends on the user's role:
 
-TypeScript:
+| Calls | Who may make them | Error otherwise |
+|---|---|---|
+| `play`, `pause`, `seek`, `setRate` | A participant with `canControl`, while the room has media. | `invalid_message` without media, `forbidden` without control. |
+| `setControl`, `transferHost`, `kick`, `lock`, `clearMedia`, `end` | The host, with or without media. | `forbidden` |
+
+Outside a room, all of these calls throw `not_in_room`.
 
 ```ts
 // The user's own presses go to the party, never straight to the player.
@@ -1095,11 +1274,33 @@ party.leave(); // ends this session with "left"
 await party.close(); // leaves and releases the party for good; dispose of the player after this
 ```
 
-Host changes need no app code beyond the UI. `transferHost(peerId)` hands over at once. If the host stays disconnected for 30 s, the relay promotes the first connected participant.
+In the other languages:
+
+- Dart names the control modes `Control.everyone` and `Control.host`. Kotlin names them `Control.EVERYONE` and `Control.HOST`.
+- In Swift, these calls are synchronous and throw, as in `try party.play()`. `leave()` doesn't throw.
+
+### Host changes
+
+Host changes need no app code beyond the UI. `transferHost(peerId)` hands the host role over at once. If the host stays disconnected for 30 seconds, the relay promotes the first connected participant.
 
 ## 8. Leaving the player, background and reconnects
 
-Call `detachPlayer()` when the user leaves the player or the app backgrounds. Set `away` first, so step 4 doesn't re-attach. A non-playing app, such as a remote control, detaches right after joining. Await the completion `detachPlayer` and `close()` return before disposing the player, and cancel or await any open under way.
+This step covers the times the user isn't watching, and how a party ends.
+
+### Detaching the player
+
+Call `detachPlayer()` when the user leaves the player or your app goes to the background. The room then stops waiting for this user.
+
+1. Set `away` first, so that `openChoice` from step 4 doesn't attach the player again.
+2. Await the completion that `detachPlayer` returns. It settles once no SDK command runs on the player.
+3. Cancel or await any open that is under way.
+4. Dispose of the player.
+
+Await the completion of `close()` the same way before you dispose of the player.
+
+An app that doesn't play, such as a remote control, detaches right after joining.
+
+When the user comes back to the player, clear `away` and the attached ref, and call `openChoice` again.
 
 TypeScript:
 
@@ -1153,15 +1354,51 @@ attached = nil
 try await openChoice()
 ```
 
-On a dropped connection the SDK resumes on its own, with backoff, for up to 5 minutes; while reconnecting, commands throw `not_in_room`. The SDK keeps nothing across an app restart: join the room again with `join(code)`.
+### Reconnects and restarts
 
-A party ends with a reason your UI handles: `left`, `ended` (the host ended the room), `kicked`, `expired` (the room reached its maximum age, 24 h by default), `replaced` or `lost`. An ended party may `create` or `join` again. After `close()` it cannot be used. See [ending](../spec/SDK.md#74-ending) and [reconnect and resume](../spec/SDK.md#14-reconnect-and-resume).
+When the connection drops, the SDK resumes on its own, with backoff, for up to 5 minutes. While it reconnects, commands throw `not_in_room`.
+
+The SDK keeps nothing across an app restart. After a restart, join the room again with its code.
+
+### How a party ends
+
+A party ends with a reason, and your UI handles each one:
+
+| Reason | What happened |
+|---|---|
+| `left` | Your app called `leave`. |
+| `ended` | The host ended the room. |
+| `kicked` | The host kicked this user. |
+| `expired` | The room reached its maximum age, which is 24 hours by default. |
+| `replaced` | A resume elsewhere took over this connection. |
+| `lost` | The party can't go on, because resuming became impossible or the room's new media wasn't valid. |
+
+An ended party may `create` or `join` again. After `close`, the party can't be used at all.
+
+The rules are in [ending](../spec/SDK.md#74-ending) and [reconnect and resume](../spec/SDK.md#14-reconnect-and-resume).
 
 ## 9. Events and errors
 
-State drives rendering, events drive messages. An `action` event says who played, paused, seeked or changed things; its `ended` kind means the media ended. `playBlocked` (step 2) carries what `play` threw: prompt the user to press play on the player, and hide it once the player leaves `loading` or the room stops playing. Ignore unknown kinds. Errors (`PartyError`, or `PartyException` in Dart/Kotlin) carry `code`, `message` and `re`. Plan wording for `relay_full`/`unreachable` (`create`) and `room_not_found`, `room_full`, `room_locked`, `invalid_code` (`join`), with a generic text for the rest. Relay codes are in [the protocol's error codes](../spec/SPEC.md#appendix-a-error-codes); the SDK adds `invalid_code`, `unreachable` and `cancelled`.
+State drives rendering, and events drive messages. Draw your UI from the state, and show a toast or a prompt for an event.
 
-TypeScript:
+### Events
+
+- An `action` event says who played, paused, seeked or changed something. An `action` of kind `ended` means the media ended, unlike the `ended` event, which means the party ended.
+- A `playBlocked` event, from step 2, carries what `play` threw. Prompt the user to press play on the player itself, and hide the prompt once the player leaves `loading` or the room stops playing.
+- Ignore event kinds you don't know, including types that a later SDK 1.x adds.
+
+### Errors
+
+Errors carry a `code`, a `message` and `re`. They are `PartyError` in TypeScript and Swift, and `PartyException` in Dart and Kotlin. Show your own text for each code, and keep `message` for logs.
+
+Plan your own wording for these codes, and use a generic text for the rest:
+
+| Call | Codes to word |
+|---|---|
+| `create` | `relay_full`, `unreachable` |
+| `join` | `room_not_found`, `room_full`, `room_locked`, `invalid_code` |
+
+The relay's codes are listed in [the protocol's error codes](../spec/SPEC.md#appendix-a-error-codes). The SDK adds three of its own: `invalid_code`, `unreachable` and `cancelled`.
 
 ```ts
 import { PartyError, type PartyEvent } from "openwatchparty";
@@ -1190,13 +1427,22 @@ function onEvent(event: PartyEvent): void {
 }
 ```
 
-In Dart and Kotlin the same shape catches `PartyException`. Events are `ActionEvent`/`PlayBlockedEvent`/`EndedEvent` in Dart and `PartyEvent.Action`/`PartyEvent.PlayBlocked`/`PartyEvent.Ended` in Kotlin. Neither type is exhaustive. A Kotlin `when` expression needs an `else` branch. A Dart `switch` expression needs a `_` case. In Swift the same shape catches `PartyError`, and `create` and `join` after `close()` throw `PartyClosedError`. Events are the structs `ActionEvent`/`PlayBlockedEvent`/`EndedEvent` conforming to the protocol `PartyEvent`. A Swift `switch` needs a `default` branch.
+### In the other languages
+
+- In Dart and Kotlin, the same shape catches `PartyException`.
+- Dart's events are `ActionEvent`, `PlayBlockedEvent` and `EndedEvent`. Kotlin's are `PartyEvent.Action`, `PartyEvent.PlayBlocked` and `PartyEvent.Ended`.
+- Neither language's event type is exhaustive. A Dart `switch` expression needs a `_` case, and a Kotlin `when` expression needs an `else` branch.
+- In Swift, the same shape catches `PartyError`. After `close`, `create` and `join` throw `PartyClosedError`.
+- Swift's events are the structs `ActionEvent`, `PlayBlockedEvent` and `EndedEvent`, which conform to the protocol `PartyEvent`. A Swift `switch` over them needs a `default` branch.
 
 ## 10. Relays
 
-`Relays.public()` starts from the SDK's compiled-in list and refreshes it from `https://openwatch.party/relays.json` only; a code's first symbol names its relay, returned by `relays.relayFor(code)`. `Relays.at(baseUrl)` is one relay for everything: the party creates and joins rooms there and fetches nothing. Codes don't cross sources. See [relay list](../spec/SDK.md#3-relay-list) and [routing](../spec/SDK.md#42-routing).
+The `Relays` object you pass to the party decides where rooms live. You can use the public relays or a relay of your own:
 
-TypeScript:
+- `Relays.public()` starts from the SDK's compiled-in list and refreshes it from `https://openwatch.party/relays.json`, and from nowhere else. A code's first symbol names its relay, which `relays.relayFor(code)` returns.
+- `Relays.at(baseUrl)` is one relay for everything. The party creates and joins rooms there and fetches nothing.
+
+Codes don't cross sources: a room created through one can't be joined through the other. The rules are in [relay list](../spec/SDK.md#3-relay-list) and [routing](../spec/SDK.md#42-routing).
 
 ```ts
 import { Relays } from "openwatchparty";
@@ -1205,24 +1451,45 @@ const publicRelays = Relays.public();
 const ownRelay = Relays.at("https://relay.example.com");
 ```
 
-In Dart these are `Relays.public()` and `Relays.at('https://relay.example.com')`; in Kotlin `Relays.public(http)` and `Relays.at(http, "https://relay.example.com")`. In Swift these are `Relays.public()` and `try Relays.at("https://relay.example.com")`.
+The other languages construct them like this:
 
-For testing, point `Relays.at` at a local relay (ready when it prints `listening 127.0.0.1:8080`); raise the per-IP limits (`--max-connections-per-ip`, `--max-rooms-per-ip`, `--join-burst`) for many instances on one machine. See the [relay README](../relay/README.md) and [`owp-peer`](../conformance/peer/README.md).
+| Language | Public relays | Your own relay |
+|---|---|---|
+| Dart | `Relays.public()` | `Relays.at('https://relay.example.com')` |
+| Kotlin | `Relays.public(http)` | `Relays.at(http, "https://relay.example.com")` |
+| Swift | `Relays.public()` | `try Relays.at("https://relay.example.com")` |
+
+### Testing with a local relay
+
+For testing, point `Relays.at` at a local relay. You can start one from the repository root:
 
 ```sh
 cd relay && go run ./cmd/owp-relay --addr 127.0.0.1:8080 --admin-addr ""
 ```
 
+The relay is ready when it prints `listening 127.0.0.1:8080`. To run many client instances on one machine, raise its per-IP limits: `--max-connections-per-ip`, `--max-rooms-per-ip` and `--join-burst`. See the [relay README](../relay/README.md) and [`owp-peer`](../conformance/peer/README.md).
+
 ## 11. Using the public relay well
 
-Under [the terms](terms.md#who-may-use-the-public-relay) the public relay is free for open-source apps; others need written permission. `client` is `<app>/<version>` (1–64 characters, non-empty on both sides of the first `/`), naming the real app: deny lists and usage counts key on `<app>`, and a denied app gets `client_blocked`. `name` is 1–32 characters, not unique. Stay within [acceptable use](terms.md#acceptable-use). See [name and client](../spec/SPEC.md#63-name-and-client).
+Under [the terms](terms.md#who-may-use-the-public-relay), the public relay is free for open-source apps. Other apps need written permission. Every app must stay within [acceptable use](terms.md#acceptable-use).
 
-For your own privacy text, [privacy in the protocol](../spec/SPEC.md#15-privacy) and [the privacy policy](privacy.md) state what the relay and other participants see.
+Identify your app and your user truthfully:
+
+- `client` is `<app>/<version>`, naming the real app. It is 1 to 64 characters long, with at least one character on each side of the first `/`.
+- Deny lists and usage counts key on `<app>`, and a denied app gets `client_blocked`.
+- `name` is the user's display name, 1 to 32 characters long. It doesn't have to be unique.
+
+The exact rules are in [name and client](../spec/SPEC.md#63-name-and-client).
+
+When you write your own privacy text, [privacy in the protocol](../spec/SPEC.md#15-privacy) and [the privacy policy](privacy.md) state what the relay and other participants see.
 
 ## Checklist
 
-- The resolver returns catalogue-ID matches first, title matches only when no ID matched, episodes searched by the show's title, and near misses to fill the choose list.
-- The app shows the matched file next to the room's media and offers the choose list, so a wrong episode matched on duration can be replaced.
-- Over IPC, reads come from a property-event cache, commands await the player's reply, and a seek waits until it lands. In a browser extension, the adapter follows element replacement and is released during ads.
+Before you ship, check these points:
 
-The SDK spec lists [what apps must do](../spec/SDK.md#167-what-apps-must-do); work through it before shipping.
+- Your resolver returns catalogue-ID matches first, and title matches only when no ID matched. It searches episodes by the show's title, and adds near misses to fill the choose list.
+- Your app shows the matched file next to the room's media and offers the choose list, so that the user can replace a wrong episode matched on duration.
+- Over IPC, reads come from a property-event cache, commands await the player's reply, and a seek waits until it lands.
+- In a browser extension, the adapter follows element replacement and is released during ads.
+
+The SDK spec lists [what apps must do](../spec/SDK.md#167-what-apps-must-do). Work through that list before you ship.
