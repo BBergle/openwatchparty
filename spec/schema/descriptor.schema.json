@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openwatch.party/schema/v1/descriptor.schema.json",
+  "title": "Media descriptor",
+  "description": "SPEC.md §10. Also limited by size, which a schema can't express: at most 4096 bytes in all and 1024 bytes for ext, measured as the JSON text received. Must not carry anything that locates or fetches media.",
+  "type": "object",
+  "required": [
+    "kind",
+    "title",
+    "durationMs"
+  ],
+  "properties": {
+    "kind": {
+      "enum": [
+        "movie",
+        "episode",
+        "video"
+      ]
+    },
+    "title": {
+      "$ref": "common.schema.json#/$defs/text"
+    },
+    "year": {
+      "$ref": "common.schema.json#/$defs/int"
+    },
+    "ids": {
+      "$ref": "#/$defs/ids"
+    },
+    "series": {
+      "type": "object",
+      "required": [
+        "title"
+      ],
+      "properties": {
+        "title": {
+          "$ref": "common.schema.json#/$defs/text"
+        },
+        "year": {
+          "$ref": "common.schema.json#/$defs/int"
+        },
+        "ids": {
+          "$ref": "#/$defs/ids"
+        }
+      }
+    },
+    "season": {
+      "$ref": "common.schema.json#/$defs/nonNegInt"
+    },
+    "episode": {
+      "$ref": "common.schema.json#/$defs/nonNegInt"
+    },
+    "durationMs": {
+      "$ref": "common.schema.json#/$defs/durationMs"
+    },
+    "file": {
+      "type": "object",
+      "properties": {
+        "sizeBytes": {
+          "$ref": "common.schema.json#/$defs/nonNegInt"
+        },
+        "oshash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        },
+        "name": {
+          "description": "SPEC.md §10 File name: no /, \\ or forbidden character (NUL included), not . or ..",
+          "type": "string",
+          "pattern": "^[^/\\\\\\x00-\\x1F\\x7F-\\x9F\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]+$",
+          "not": {
+            "enum": [
+              ".",
+              ".."
+            ]
+          }
+        }
+      }
+    },
+    "ext": {
+      "description": "App-private hints keyed by reverse-DNS name; values are defined by their owner.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9-]+(\\.[a-z0-9-]+)+$"
+      }
+    }
+  },
+  "if": {
+    "required": [
+      "kind"
+    ],
+    "properties": {
+      "kind": {
+        "const": "episode"
+      }
+    }
+  },
+  "then": {
+    "required": [
+      "series"
+    ]
+  },
+  "$defs": {
+    "ids": {
+      "description": "SPEC.md §10: namespace → ID. Unknown namespaces are allowed and ignored by receivers.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

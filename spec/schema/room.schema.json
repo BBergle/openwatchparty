@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openwatch.party/schema/v1/room.schema.json",
+  "title": "room (relay → client)",
+  "description": "SPEC.md §8.2, §8.3, §9.",
+  "type": "object",
+  "required": [
+    "type"
+  ],
+  "properties": {
+    "type": {
+      "const": "room"
+    },
+    "action": {
+      "description": "SPEC.md §9.1: the action the event that published this snapshot set.",
+      "type": "object",
+      "required": [
+        "kind",
+        "by"
+      ],
+      "properties": {
+        "kind": {
+          "description": "An open enum (SPEC.md §4): play, pause, seek, rate, media, stall, ended, host.",
+          "type": "string",
+          "minLength": 1
+        },
+        "by": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "common.schema.json#/$defs/peerId"
+            }
+          ]
+        }
+      }
+    },
+    "media": {
+      "description": "SPEC.md §8.3: present only on the snapshot that starts a new epoch.",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "descriptor.schema.json"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "$ref": "snapshot.schema.json"
+    }
+  ]
+}

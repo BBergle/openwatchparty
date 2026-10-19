@@ -1,0 +1,10 @@
+{
+  "relays": [
+    {
+      "id": "home",
+      "name": "Home",
+      "url": "wss://relay.example.com/v1/ws?x=/v1/ws",
+      "prefixes": "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+    }
+  ]
+}

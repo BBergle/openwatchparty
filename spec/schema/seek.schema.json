@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openwatch.party/schema/v1/seek.schema.json",
+  "title": "seek (client → relay)",
+  "description": "SPEC.md §7.8.",
+  "type": "object",
+  "required": [
+    "type",
+    "positionMs"
+  ],
+  "properties": {
+    "type": {
+      "const": "seek"
+    },
+    "positionMs": {
+      "$ref": "common.schema.json#/$defs/nonNegInt"
+    }
+  }
+}

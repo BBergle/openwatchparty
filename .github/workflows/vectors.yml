@@ -1,0 +1,39 @@
+# Regenerates the client test vectors in conformance/vectors/ from the Go reference implementation and fails when any
+# committed table differs from the generator's output, byte for byte.
+name: vectors
+
+on:
+  push:
+    paths:
+      - "conformance/vectors/**"
+      - "relays.json"
+      - ".github/workflows/vectors.yml"
+  pull_request:
+    paths:
+      - "conformance/vectors/**"
+      - "relays.json"
+      - ".github/workflows/vectors.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: conformance/vectors/tools
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: conformance/vectors/tools/go.mod
+          cache: false
+      - name: Format
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: Vet
+        run: go vet ./...
+      - name: Reference tests
+        run: go test ./...
+      - name: Vectors match the generator
+        run: go run . -check

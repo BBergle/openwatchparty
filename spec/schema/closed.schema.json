@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openwatch.party/schema/v1/closed.schema.json",
+  "title": "closed (relay → client)",
+  "description": "SPEC.md §8.6.",
+  "type": "object",
+  "required": [
+    "type",
+    "reason"
+  ],
+  "properties": {
+    "type": {
+      "const": "closed"
+    },
+    "reason": {
+      "description": "An open enum (SPEC.md §4): ended, kicked, expired.",
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

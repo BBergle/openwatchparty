@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openwatch.party/schema/v1/pong.schema.json",
+  "title": "pong (relay → client)",
+  "description": "SPEC.md §8.4.",
+  "type": "object",
+  "required": [
+    "type",
+    "id",
+    "serverTime"
+  ],
+  "properties": {
+    "type": {
+      "const": "pong"
+    },
+    "id": {
+      "$ref": "common.schema.json#/$defs/pingId"
+    },
+    "serverTime": {
+      "$ref": "common.schema.json#/$defs/relayTime"
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openwatch.party/schema/v1/clearMedia.schema.json",
+  "title": "clearMedia (client → relay)",
+  "description": "SPEC.md §7.11.",
+  "type": "object",
+  "required": [
+    "type"
+  ],
+  "properties": {
+    "type": {
+      "const": "clearMedia"
+    }
+  }
+}

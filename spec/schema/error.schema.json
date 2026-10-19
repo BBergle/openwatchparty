@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openwatch.party/schema/v1/error.schema.json",
+  "title": "error (relay → client)",
+  "description": "SPEC.md §8.5, Appendix A.",
+  "type": "object",
+  "required": [
+    "type",
+    "code",
+    "message",
+    "re"
+  ],
+  "properties": {
+    "type": {
+      "const": "error"
+    },
+    "code": {
+      "description": "An open enum (SPEC.md §4): invalid_message, unsupported, rate_limited, relay_full, room_not_found, room_full, room_locked, forbidden, not_in_room, already_in_room, resume_failed, client_blocked.",
+      "type": "string",
+      "minLength": 1
+    },
+    "message": {
+      "type": "string"
+    },
+    "re": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

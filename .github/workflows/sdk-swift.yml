@@ -1,0 +1,67 @@
+# Checks the Swift SDK (the root Package.swift, sources in sdk/swift). The macOS job builds it and runs the unit,
+# vector, embedded relay list and integration tests with Xcode's Swift, then builds it for the iOS and tvOS simulators.
+# The Linux job builds it and runs the same tests in the official swift:6.4 container. The integration tests run a
+# relay built from relay/.
+name: sdk-swift
+
+on:
+  push:
+    paths:
+      - "Package.swift"
+      - "sdk/swift/**"
+      - "relay/**"
+      - "conformance/vectors/**"
+      - "relays.json"
+      - ".github/workflows/sdk-swift.yml"
+  pull_request:
+    paths:
+      - "Package.swift"
+      - "sdk/swift/**"
+      - "relay/**"
+      - "conformance/vectors/**"
+      - "relays.json"
+      - ".github/workflows/sdk-swift.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          check-latest: true
+          cache-dependency-path: relay/go.sum
+      - name: Build the relay
+        working-directory: relay
+        run: go build -o "$RUNNER_TEMP/owp-relay" ./cmd/owp-relay
+      - name: Build
+        run: swift --version && swift build --build-tests
+      - name: Unit, vector and integration tests
+        run: OWP_RELAY_BIN="$RUNNER_TEMP/owp-relay" swift test
+      - name: Build for the iOS simulator
+        run: xcodebuild build -scheme OpenWatchParty -destination 'generic/platform=iOS Simulator'
+      - name: Build for the tvOS simulator
+        run: xcodebuild build -scheme OpenWatchParty -destination 'generic/platform=tvOS Simulator'
+
+  linux:
+    runs-on: ubuntu-latest
+    container: swift:6.4
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          check-latest: true
+          cache-dependency-path: relay/go.sum
+      # In a container job RUNNER_TEMP is the container's path; the runner.temp expression is the host's.
+      - name: Build the relay
+        working-directory: relay
+        run: go build -o "$RUNNER_TEMP/owp-relay" ./cmd/owp-relay
+      - name: Build
+        run: swift --version && swift build --build-tests
+      - name: Unit, vector and integration tests
+        run: OWP_RELAY_BIN="$RUNNER_TEMP/owp-relay" swift test

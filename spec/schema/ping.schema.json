@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openwatch.party/schema/v1/ping.schema.json",
+  "title": "ping (client → relay)",
+  "description": "SPEC.md §7.4.",
+  "type": "object",
+  "required": [
+    "type",
+    "id"
+  ],
+  "properties": {
+    "type": {
+      "const": "ping"
+    },
+    "id": {
+      "$ref": "common.schema.json#/$defs/pingId"
+    }
+  }
+}

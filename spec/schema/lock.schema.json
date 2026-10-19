@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openwatch.party/schema/v1/lock.schema.json",
+  "title": "lock (client → relay)",
+  "description": "SPEC.md §7.15.",
+  "type": "object",
+  "required": [
+    "type",
+    "locked"
+  ],
+  "properties": {
+    "type": {
+      "const": "lock"
+    },
+    "locked": {
+      "type": "boolean"
+    }
+  }
+}

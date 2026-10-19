@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openwatch.party/schema/v1/common.schema.json",
+  "title": "OWP v1 shared definitions",
+  "description": "Definitions shared by the OWP v1 schemas. SPEC.md §2, §6.3, §7.5, §11.1.",
+  "$defs": {
+    "int": {
+      "description": "SPEC.md §2: a number with an integral value, magnitude at most 2^53 - 1.",
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "nonNegInt": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "posInt": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "durationMs": {
+      "description": "SPEC.md §10, §13.1: a descriptor's duration, 1 ms to 7 days.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 604800000
+    },
+    "positionMs": {
+      "description": "SPEC.md §9.1: a snapshot's media position, 0 to the media's durationMs, so at most 7 days.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 604800000
+    },
+    "offsetMs": {
+      "description": "SPEC.md §7.5, §13.1: a participant's local offset, at most 7 days either way.",
+      "type": "integer",
+      "minimum": -604800000,
+      "maximum": 604800000
+    },
+    "name": {
+      "description": "SPEC.md §6.3: display name, 1-32 code points, no forbidden characters (Cc, Bidi_Control; SPEC.md §2).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^[^\\x00-\\x1F\\x7F-\\x9F\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]*$"
+    },
+    "client": {
+      "description": "SPEC.md §6.3: <app>/<version>, 1-64 code points, no forbidden characters (Cc, Bidi_Control; SPEC.md §2).",
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[^/\\x00-\\x1F\\x7F-\\x9F\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]+/[^\\x00-\\x1F\\x7F-\\x9F\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]+$"
+    },
+    "text": {
+      "description": "SPEC.md §10: a descriptor title, 1 or more code points, no forbidden characters (Cc, Bidi_Control; SPEC.md §2).",
+      "type": "string",
+      "pattern": "^[^\\x00-\\x1F\\x7F-\\x9F\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]+$"
+    },
+    "code": {
+      "description": "SPEC.md §5.1: a room code as the relay sends it.",
+      "type": "string",
+      "pattern": "^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$"
+    },
+    "peerId": {
+      "description": "SPEC.md §11.1.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,16}$"
+    },
+    "token": {
+      "description": "SPEC.md §11.1: 32 random bytes, base64url without padding.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "player": {
+      "enum": [
+        "idle",
+        "loading",
+        "ready",
+        "buffering"
+      ]
+    },
+    "match": {
+      "description": "SPEC.md §7.5.",
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "searching",
+            "matched",
+            "mismatched",
+            "unavailable"
+          ]
+        },
+        "deltaMs": {
+          "$ref": "#/$defs/int"
+        }
+      }
+    },
+    "matchOrNull": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/match"
+        }
+      ]
+    },
+    "rate": {
+      "description": "SPEC.md §13.1: minRate to maxRate.",
+      "type": "number",
+      "minimum": 0.5,
+      "maximum": 2
+    },
+    "pingId": {
+      "type": [
+        "string",
+        "number"
+      ]
+    },
+    "relayTime": {
+      "description": "SPEC.md §2: relay time in milliseconds.",
+      "$ref": "#/$defs/nonNegInt"
+    }
+  }
+}

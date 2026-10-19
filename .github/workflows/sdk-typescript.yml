@@ -1,0 +1,83 @@
+# Checks the TypeScript SDK (sdk/typescript) on Node 22: typecheck, the unit, vector and embedded relay list tests, and
+# the integration tests against a relay built from relay/. The peer job runs conformance/peer/scenario.sh: an owp-peer
+# host and guest in one room on a built relay, following play, pause, seek and rate. Publishes nothing.
+name: sdk-typescript
+
+on:
+  push:
+    paths:
+      - "sdk/typescript/**"
+      - "conformance/peer/**"
+      - "relay/**"
+      - "conformance/vectors/**"
+      - "spec/examples/**"
+      - "relays.json"
+      - ".github/workflows/sdk-typescript.yml"
+  pull_request:
+    paths:
+      - "sdk/typescript/**"
+      - "conformance/peer/**"
+      - "relay/**"
+      - "conformance/vectors/**"
+      - "spec/examples/**"
+      - "relays.json"
+      - ".github/workflows/sdk-typescript.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/typescript
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+      # The integration tests build owp-relay from relay/ themselves.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          check-latest: true
+          cache-dependency-path: relay/go.sum
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Unit, vector and embedded relay list tests
+        run: npm run test:unit
+      - name: Integration tests
+        run: npm run test:integration
+
+  peer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          check-latest: true
+          cache-dependency-path: relay/go.sum
+      - name: Build the relay
+        working-directory: relay
+        run: go build -o "$RUNNER_TEMP/owp-relay" ./cmd/owp-relay
+      # owp-peer runs the SDK's TypeScript sources directly: no npm install, no build.
+      - name: An owp-peer host and guest in one room
+        run: |
+          "$RUNNER_TEMP/owp-relay" --addr=127.0.0.1:18200 --admin-addr= >"$RUNNER_TEMP/relay.log" 2>&1 &
+          relay=$!
+          for _ in $(seq 100); do
+            grep -q '^listening ' "$RUNNER_TEMP/relay.log" && break
+            sleep 0.1
+          done
+          status=0
+          conformance/peer/scenario.sh http://127.0.0.1:18200 || status=$?
+          kill "$relay"
+          if [ "$status" -ne 0 ]; then cat "$RUNNER_TEMP/relay.log"; fi
+          exit "$status"

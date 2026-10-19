@@ -1,0 +1,14 @@
+{
+  "name": "owp-peer",
+  "version": "0.1.0",
+  "description": "A scripted Open Watch Party participant for driving apps in tests.",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "owp-peer": "owp-peer.js"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

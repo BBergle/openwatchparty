@@ -1,0 +1,30 @@
+name: spec
+
+on:
+  push:
+    paths:
+      - "spec/**"
+      - ".github/workflows/spec.yml"
+  pull_request:
+    paths:
+      - "spec/**"
+      - ".github/workflows/spec.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: spec/check/go.mod
+          cache-dependency-path: spec/check/go.sum
+      - name: Vet
+        working-directory: spec/check
+        run: go vet ./...
+      - name: Validate schemas and examples against SPEC.md
+        working-directory: spec/check
+        run: go run .

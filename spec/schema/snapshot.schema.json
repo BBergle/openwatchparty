@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openwatch.party/schema/v1/snapshot.schema.json",
+  "title": "Room snapshot fields",
+  "description": "SPEC.md §9.1: the room snapshot without type, as carried by joined.room and, with type room, by room.",
+  "type": "object",
+  "required": [
+    "rev",
+    "code",
+    "epoch",
+    "phase",
+    "positionMs",
+    "atMs",
+    "rate",
+    "control",
+    "locked",
+    "waitingOn",
+    "participants"
+  ],
+  "properties": {
+    "rev": {
+      "$ref": "common.schema.json#/$defs/posInt"
+    },
+    "code": {
+      "$ref": "common.schema.json#/$defs/code"
+    },
+    "epoch": {
+      "$ref": "common.schema.json#/$defs/nonNegInt"
+    },
+    "phase": {
+      "enum": [
+        "idle",
+        "paused",
+        "waiting",
+        "playing"
+      ]
+    },
+    "positionMs": {
+      "$ref": "common.schema.json#/$defs/positionMs"
+    },
+    "atMs": {
+      "$ref": "common.schema.json#/$defs/relayTime"
+    },
+    "rate": {
+      "$ref": "common.schema.json#/$defs/rate"
+    },
+    "control": {
+      "enum": [
+        "host",
+        "everyone"
+      ]
+    },
+    "locked": {
+      "type": "boolean"
+    },
+    "waitingOn": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/peerId"
+      },
+      "uniqueItems": true
+    },
+    "participants": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "peerId",
+          "name",
+          "client",
+          "host",
+          "connected",
+          "player",
+          "match",
+          "offsetMs"
+        ],
+        "properties": {
+          "peerId": {
+            "$ref": "common.schema.json#/$defs/peerId"
+          },
+          "name": {
+            "$ref": "common.schema.json#/$defs/name"
+          },
+          "client": {
+            "$ref": "common.schema.json#/$defs/client"
+          },
+          "host": {
+            "type": "boolean"
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "player": {
+            "$ref": "common.schema.json#/$defs/player"
+          },
+          "match": {
+            "$ref": "common.schema.json#/$defs/matchOrNull"
+          },
+          "offsetMs": {
+            "$ref": "common.schema.json#/$defs/offsetMs"
+          }
+        }
+      },
+      "contains": {
+        "type": "object",
+        "required": [
+          "host"
+        ],
+        "properties": {
+          "host": {
+            "const": true
+          }
+        }
+      },
+      "minContains": 1,
+      "maxContains": 1
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "phase"
+        ],
+        "properties": {
+          "phase": {
+            "const": "idle"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "positionMs": {
+            "const": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "phase"
+        ],
+        "properties": {
+          "phase": {
+            "not": {
+              "const": "waiting"
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "waitingOn": {
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  ]
+}

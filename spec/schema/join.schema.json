@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openwatch.party/schema/v1/join.schema.json",
+  "title": "join (client → relay)",
+  "description": "SPEC.md §7.2.",
+  "type": "object",
+  "required": [
+    "type",
+    "code",
+    "name",
+    "client"
+  ],
+  "properties": {
+    "type": {
+      "const": "join"
+    },
+    "code": {
+      "type": "string"
+    },
+    "name": {
+      "$ref": "common.schema.json#/$defs/name"
+    },
+    "client": {
+      "$ref": "common.schema.json#/$defs/client"
+    }
+  }
+}

@@ -1,0 +1,39 @@
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Go
+/relay/bin/
+/conformance/relay/bin/
+/conformance/relay/owp-conform
+*.test
+*.out
+
+# Node / TypeScript
+node_modules/
+dist/
+*.tsbuildinfo
+.vitepress/cache/
+.vitepress/dist/
+
+# Dart
+.dart_tool/
+.packages
+pubspec.lock.bak
+build/
+
+# Kotlin / Gradle
+.gradle/
+.kotlin/
+local.properties
+*.iml
+
+# Swift
+/.build/
+/.swiftpm/
+
+# Relay runtime state
+*.pid
+*.log

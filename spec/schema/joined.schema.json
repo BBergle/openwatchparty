@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openwatch.party/schema/v1/joined.schema.json",
+  "title": "joined (relay → client)",
+  "description": "SPEC.md §8.1.",
+  "type": "object",
+  "required": [
+    "type",
+    "code",
+    "you",
+    "room",
+    "media",
+    "serverTime"
+  ],
+  "properties": {
+    "type": {
+      "const": "joined"
+    },
+    "code": {
+      "$ref": "common.schema.json#/$defs/code"
+    },
+    "you": {
+      "type": "object",
+      "required": [
+        "peerId",
+        "token"
+      ],
+      "properties": {
+        "peerId": {
+          "$ref": "common.schema.json#/$defs/peerId"
+        },
+        "token": {
+          "$ref": "common.schema.json#/$defs/token"
+        }
+      }
+    },
+    "room": {
+      "$ref": "snapshot.schema.json"
+    },
+    "media": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "descriptor.schema.json"
+        }
+      ]
+    },
+    "serverTime": {
+      "$ref": "common.schema.json#/$defs/relayTime"
+    }
+  }
+}

@@ -1,0 +1,60 @@
+# Checks the relay: format, vet (the relay and the conformance tool), unit tests under the race detector (TLS
+# included, no network), a static build, then the full conformance suite (conformance/relay) against that binary at
+# --timer-scale 0.1. The suite starts, restarts and stops the relay itself.
+name: relay
+
+on:
+  push:
+    paths:
+      - "relay/**"
+      - "conformance/relay/**"
+      - "spec/SPEC.md"
+      - "spec/examples/**"
+      - ".github/workflows/relay.yml"
+  pull_request:
+    paths:
+      - "relay/**"
+      - "conformance/relay/**"
+      - "spec/SPEC.md"
+      - "spec/examples/**"
+      - ".github/workflows/relay.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v5
+        with:
+          # The latest 1.26 patch, as in the image's golang:1.26-alpine, even when the runner image has an older one.
+          # relay/go.mod's `go 1.26.0` is only the minimum.
+          go-version: '1.26.x'
+          check-latest: true
+          cache-dependency-path: |
+            relay/go.sum
+            conformance/relay/go.sum
+      - name: Format
+        working-directory: relay
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: Vet
+        working-directory: relay
+        run: go vet ./...
+      - name: Vet conformance
+        working-directory: conformance/relay
+        run: go vet ./...
+      # The tests read spec/examples, outside this module. Go's test cache doesn't track files there, so a cached pass
+      # from the restored build cache would hide an examples change: -count=1 runs the tests every time.
+      - name: Test
+        working-directory: relay
+        run: go test -race -count=1 ./...
+      - name: Build
+        working-directory: relay
+        run: >-
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${GITHUB_SHA::12}"
+          -o "$RUNNER_TEMP/owp-relay" ./cmd/owp-relay
+      - name: Conformance
+        working-directory: conformance/relay
+        run: go run ./cmd/owp-conform run --relay-bin "$RUNNER_TEMP/owp-relay" --timer-scale 0.1

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openwatch.party/schema/v1/status.schema.json",
+  "title": "status (client → relay)",
+  "description": "SPEC.md §7.5.",
+  "type": "object",
+  "required": [
+    "type",
+    "epoch",
+    "player",
+    "match",
+    "offsetMs"
+  ],
+  "properties": {
+    "type": {
+      "const": "status"
+    },
+    "epoch": {
+      "$ref": "common.schema.json#/$defs/nonNegInt"
+    },
+    "player": {
+      "$ref": "common.schema.json#/$defs/player"
+    },
+    "match": {
+      "$ref": "common.schema.json#/$defs/matchOrNull"
+    },
+    "offsetMs": {
+      "$ref": "common.schema.json#/$defs/offsetMs"
+    },
+    "rttMs": {
+      "$ref": "common.schema.json#/$defs/nonNegInt"
+    }
+  }
+}

@@ -1,0 +1,43 @@
+# Builds openwatch.party from website/ on every pull request and every push to main, and checks every link in the
+# output. The site renders documents from all over the repository and publishes the public relay list at /relays.json,
+# where the SDKs refresh it, so it runs on every change, not only on changes to website/.
+#
+# Cloudflare Pages deploys the site itself: the Pages project openwatchparty is connected to this repository and
+# builds main with the same command (root directory website, output .vitepress/dist, NODE_VERSION 24).
+name: website
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: website-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Check links and the relay list
+        run: npm run check-links

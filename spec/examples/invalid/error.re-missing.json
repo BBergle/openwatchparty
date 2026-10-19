@@ -1,0 +1,5 @@
+{
+  "type": "error",
+  "code": "forbidden",
+  "message": "only the host may send kick"
+}

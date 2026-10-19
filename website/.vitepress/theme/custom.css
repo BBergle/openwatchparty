@@ -1,0 +1,32 @@
+:root {
+  --vp-font-family-base: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif,
+    'Apple Color Emoji', 'Segoe UI Emoji';
+  --vp-font-family-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  /* The theme's grey language label on code blocks is below 4.5:1. */
+  --vp-code-lang-color: var(--vp-c-text-2);
+}
+
+/* White on the theme's light brand button is 4.48:1; on the darker brand shade it passes. */
+:root:not(.dark) {
+  --vp-button-brand-bg: var(--vp-c-brand-1);
+}
+
+/* The text logo. */
+.VPNavBarTitle .title {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* `[OWNER INPUT: …]` placeholders in the legal drafts (marked by .vitepress/docs.mts). */
+.vp-doc code.owner-input {
+  outline: 1px dashed var(--vp-c-warning-1);
+  background-color: var(--vp-c-warning-soft);
+  color: var(--vp-c-text-1);
+}
+
+/* The theme's code tabs show no keyboard focus. */
+.vp-code-group .tabs input:focus-visible + label {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: -6px;
+  border-radius: 8px;
+}

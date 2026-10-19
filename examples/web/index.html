@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open Watch Party web example</title>
+  <style>
+    body { font: 16px/1.4 system-ui, sans-serif; max-width: 52rem; margin: 1.5rem auto; padding: 0 1rem; }
+    fieldset { border: 1px solid #bbb; display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: end; }
+    label { display: flex; flex-direction: column; align-items: start; font-size: .875rem; }
+    input, button { font: inherit; }
+    :focus-visible { outline: 3px solid #1a6ed8; outline-offset: 2px; }
+    video { width: 100%; max-height: 60vh; background: #000; }
+    #code-display { font: 700 1.5rem ui-monospace, monospace; letter-spacing: .1em; }
+    #mismatch, #blocked { border: 2px solid #c47f00; padding: .5rem 1rem; margin: .5rem 0; }
+    #log { min-height: 1.4em; color: #444; }
+    form { display: contents; }
+  </style>
+  <script type="importmap">{ "imports": { "openwatchparty": "../../sdk/typescript/dist/index.js" } }</script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <h1>Open Watch Party web example</h1>
+
+  <fieldset>
+    <legend>Your video</legend>
+    <label>Video file <input id="file" type="file" accept="video/*"></label>
+    <label>Title <input id="title" placeholder="the file name"></label>
+    <label>TMDB ID <input id="tmdb" inputmode="numeric" placeholder="optional"></label>
+  </fieldset>
+
+  <fieldset id="session">
+    <legend>Room</legend>
+    <label>Your name <input id="name" value="Guest" maxlength="32" required></label>
+    <label>Relay <input id="relay" type="url" placeholder="public relays" size="26"></label>
+    <button id="create" type="button">Create room</button>
+    <form id="join-form">
+      <label>Room code <input id="code" autocomplete="off" spellcheck="false" size="8"></label>
+      <button id="join">Join</button>
+    </form>
+  </fieldset>
+
+  <section id="room" hidden aria-label="Current room">
+    <p>Room <span id="code-display"></span> <span id="status"></span>
+      <button id="leave" type="button">Leave</button></p>
+    <div id="mismatch" role="alertdialog" aria-labelledby="mismatch-text" hidden>
+      <p id="mismatch-text"></p>
+      <button id="accept" type="button">Play my file</button>
+      <button id="decline" type="button">Don't play</button>
+    </div>
+    <p id="blocked" role="alert" hidden>The browser didn't start the video. Press play on the video to watch with the room.</p>
+    <form id="offset-form">
+      <label>My offset in ms (my position = room position + offset)
+        <input id="offset" type="number" step="100" value="0"></label>
+      <button>Set offset</button>
+    </form>
+    <h2>Participants</h2>
+    <ul id="people"></ul>
+  </section>
+
+  <p id="log" role="status" aria-live="polite"></p>
+  <video id="video" controls tabindex="0"></video>
+</body>
+</html>

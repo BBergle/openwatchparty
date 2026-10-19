@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openwatch.party/schema/v1/rate.schema.json",
+  "title": "rate (client → relay)",
+  "description": "SPEC.md §7.9.",
+  "type": "object",
+  "required": [
+    "type",
+    "rate"
+  ],
+  "properties": {
+    "type": {
+      "const": "rate"
+    },
+    "rate": {
+      "$ref": "common.schema.json#/$defs/rate"
+    }
+  }
+}

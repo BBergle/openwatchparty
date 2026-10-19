@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openwatch.party/schema/v1/resume.schema.json",
+  "title": "resume (client → relay)",
+  "description": "SPEC.md §7.3.",
+  "type": "object",
+  "required": [
+    "type",
+    "code",
+    "peerId",
+    "token"
+  ],
+  "properties": {
+    "type": {
+      "const": "resume"
+    },
+    "code": {
+      "type": "string"
+    },
+    "peerId": {
+      "type": "string"
+    },
+    "token": {
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openwatch.party/schema/v1/relays.schema.json",
+  "title": "Relay list",
+  "description": "SPEC.md §5.2: the public relay list, relays.json at the repository root. IDs must be unique.",
+  "type": "object",
+  "required": [
+    "relays"
+  ],
+  "properties": {
+    "relays": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/relay"
+      }
+    }
+  },
+  "$defs": {
+    "relay": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "url",
+        "prefixes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[^\\x00-\\x1F\\x7F-\\x9F\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]*$"
+        },
+        "url": {
+          "type": "string",
+          "description": "SPEC.md §5.2: wss:// only; printable ASCII (U+0021-U+007E) only; no / in the host, no ? or # anywhere.",
+          "pattern": "^wss://[!-\"$-.0->@-~]+(/[!-\"$->@-~]*)?/v1/ws$"
+        },
+        "prefixes": {
+          "description": "Distinct symbols; no symbol may appear in two relays of one list (not expressible in JSON Schema). A list may leave symbols to no relay.",
+          "type": "string",
+          "pattern": "^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{1,31}$"
+        }
+      }
+    }
+  }
+}

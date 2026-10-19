@@ -1,0 +1,9 @@
+{
+  "relays": [
+    {
+      "id": "a",
+      "url": "wss://a.relay.example/v1/ws",
+      "prefixes": "2345678"
+    }
+  ]
+}

@@ -1,0 +1,379 @@
+/* The home page's own content (src/index.md), below HomeHero and HomeFeatures, in HomeMain.vue's .home-content. */
+
+.home-content {
+  color: var(--vp-c-text-1);
+}
+
+.home-section {
+  margin: 0 auto;
+  padding: 72px 24px 0;
+  max-width: calc(1152px + 2 * 24px);
+}
+
+.home-content h2 {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 36px;
+  letter-spacing: -0.02em;
+}
+
+.home-content h3 {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.home-content p {
+  font-size: 16px;
+  line-height: 26px;
+  color: var(--vp-c-text-2);
+}
+
+/* Headings keep their IDs; the hover links to them are for documents. */
+.home-content .header-anchor {
+  display: none;
+}
+
+.home-content a {
+  font-weight: 500;
+  color: var(--vp-c-brand-1);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.home-content a:hover {
+  text-decoration-thickness: 2px;
+}
+
+.home-content a:focus-visible {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* How a room works: numbered steps, joined by a line. */
+.home-steps ol {
+  display: grid;
+  gap: 28px;
+  margin-top: 32px;
+  counter-reset: step;
+}
+
+.home-steps li {
+  position: relative;
+  padding-left: 56px;
+  counter-increment: step;
+}
+
+.home-steps li::before {
+  content: counter(step);
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--vp-button-brand-text);
+  background-color: var(--vp-button-brand-bg);
+}
+
+.home-steps li:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 44px;
+  bottom: -20px;
+  left: 17px;
+  width: 2px;
+  border-radius: 1px;
+  background-color: var(--vp-c-divider);
+}
+
+.home-steps h3 {
+  line-height: 36px;
+}
+
+.home-steps p {
+  margin-top: 4px;
+  max-width: 560px;
+}
+
+/* How a room works: the room's limits. */
+.home-facts ul {
+  display: grid;
+  margin-top: 40px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 14px;
+  background-color: var(--vp-c-bg-soft);
+}
+
+.home-facts li {
+  padding: 20px 24px;
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--vp-c-text-2);
+}
+
+.home-facts li + li {
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+.home-facts strong {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 34px;
+  letter-spacing: -0.02em;
+  color: var(--vp-c-text-1);
+}
+
+/* What the relay holds. */
+.home-relay-cards ul {
+  display: grid;
+  gap: 16px;
+  margin-top: 32px;
+}
+
+.home-relay-cards li {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 14px;
+  padding: 22px 24px;
+  background-color: var(--vp-c-bg-soft);
+}
+
+.home-relay-cards h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.home-relay-cards h3::before {
+  content: '';
+  flex-shrink: 0;
+  box-sizing: border-box;
+  border: 2px solid var(--vp-c-brand-1);
+  border-radius: 50%;
+  width: 12px;
+  height: 12px;
+}
+
+.home-relay-cards li:first-child h3::before {
+  background-color: var(--vp-c-brand-1);
+}
+
+.home-relay-cards li:last-child h3::before {
+  border-color: var(--vp-c-text-2);
+}
+
+.home-relay-cards p {
+  margin-top: 8px;
+  font-size: 15px;
+  line-height: 24px;
+}
+
+.home-relay > p {
+  margin-top: 24px;
+}
+
+/* Add it to your app: the call to action for developers. */
+.home-developers {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 20px;
+  padding: 32px 24px;
+  background:
+    radial-gradient(70% 120% at 100% 0%, var(--vp-c-brand-soft), transparent),
+    var(--vp-c-bg-soft);
+}
+
+.home-developers > p {
+  margin-top: 12px;
+  max-width: 640px;
+  font-size: 17px;
+  line-height: 28px;
+}
+
+.home-sdks ul {
+  display: grid;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.home-sdks li {
+  position: relative;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  padding: 16px 44px 16px 20px;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--vp-c-text-2);
+  background-color: var(--vp-c-bg);
+  transition: border-color 0.25s;
+}
+
+.home-sdks li:hover {
+  border-color: var(--vp-c-brand-1);
+}
+
+.home-sdks li:focus-within {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 2px;
+}
+
+.home-sdks li::after {
+  content: '→';
+  position: absolute;
+  top: 50%;
+  right: 20px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--vp-c-brand-1);
+  transform: translateY(-50%);
+}
+
+.home-content .home-sdks a {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 26px;
+  color: var(--vp-c-text-1);
+  text-decoration: none;
+}
+
+/* The whole card is the link. */
+.home-sdks a::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.home-content .home-sdks a:focus-visible {
+  outline: none;
+}
+
+.home-actions p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.home-content .home-actions a {
+  display: inline-block;
+  border: 1px solid var(--vp-button-alt-border);
+  border-radius: 24px;
+  padding: 0 24px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 46px;
+  color: var(--vp-button-alt-text);
+  text-decoration: none;
+  background-color: var(--vp-button-alt-bg);
+  transition: background-color 0.25s;
+}
+
+.home-content .home-actions a:hover {
+  background-color: var(--vp-button-alt-hover-bg);
+}
+
+.home-content .home-actions a:first-child {
+  border-color: var(--vp-button-brand-border);
+  color: var(--vp-button-brand-text);
+  background-color: var(--vp-button-brand-bg);
+}
+
+.home-content .home-actions a:first-child:hover {
+  background-color: var(--vp-button-brand-hover-bg);
+}
+
+.home-content .home-actions a:focus-visible {
+  outline-offset: 3px;
+  border-radius: 24px;
+}
+
+/* On a phone the buttons take one full line each. */
+@media (max-width: 639px) {
+  .home-content .home-actions a {
+    flex: 1 1 auto;
+    text-align: center;
+  }
+}
+
+@media (min-width: 640px) {
+  .home-section {
+    padding: 96px 48px 0;
+    max-width: calc(1152px + 2 * 48px);
+  }
+
+  .home-content h2 {
+    font-size: 32px;
+    line-height: 40px;
+  }
+
+  .home-facts ul {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .home-facts li + li {
+    border-top: 0;
+    border-left: 1px solid var(--vp-c-divider);
+  }
+
+  .home-developers {
+    padding: 48px;
+  }
+
+  .home-sdks ul {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 960px) {
+  .home-section {
+    padding: 112px 64px 0;
+    max-width: calc(1152px + 2 * 64px);
+  }
+
+  .home-relay-cards ul {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .home-steps ol {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 32px;
+  }
+
+  .home-steps li {
+    padding-top: 52px;
+    padding-left: 0;
+  }
+
+  .home-steps li:not(:last-child)::after {
+    top: 17px;
+    right: -24px;
+    bottom: auto;
+    left: 52px;
+    width: auto;
+    height: 2px;
+  }
+
+  .home-steps h3 {
+    line-height: 28px;
+  }
+
+  .home-steps p {
+    margin-top: 8px;
+  }
+}
+
+/* The four SDK cards in one row once each has room for "Kotlin Multiplatform". */
+@media (min-width: 1280px) {
+  .home-sdks ul {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

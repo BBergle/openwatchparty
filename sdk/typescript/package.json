@@ -1,0 +1,48 @@
+{
+  "name": "openwatchparty",
+  "version": "1.0.0",
+  "description": "Open Watch Party SDK: keep players in different apps in sync in one room.",
+  "license": "Apache-2.0",
+  "homepage": "https://openwatch.party",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/edde746/openwatchparty.git",
+    "directory": "sdk/typescript"
+  },
+  "keywords": [
+    "watch party",
+    "sync",
+    "video",
+    "websocket"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:test": "tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit",
+    "test": "npm run build:test && node --test --test-concurrency=1 \"build/test/**/*.test.js\"",
+    "test:unit": "npm run build:test && node --test \"build/test/unit/*.test.js\"",
+    "test:integration": "npm run build:test && node --test --test-concurrency=1 \"build/test/integration/*.test.js\"",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^7.0.2"
+  }
+}

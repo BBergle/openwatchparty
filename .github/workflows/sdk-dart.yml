@@ -1,0 +1,57 @@
+# Checks the Dart SDK (sdk/dart): format and analysis on stable Dart; unit, vector, embedded relay list and
+# integration tests on stable and on the oldest Dart the package supports (3.4). The integration tests run a relay
+# built from relay/.
+name: sdk-dart
+
+on:
+  push:
+    paths:
+      - "sdk/dart/**"
+      - "relay/**"
+      - "conformance/vectors/**"
+      - "relays.json"
+      - ".github/workflows/sdk-dart.yml"
+  pull_request:
+    paths:
+      - "sdk/dart/**"
+      - "relay/**"
+      - "conformance/vectors/**"
+      - "relays.json"
+      - ".github/workflows/sdk-dart.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dart: ["3.4.0", stable]
+    defaults:
+      run:
+        working-directory: sdk/dart
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: ${{ matrix.dart }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          check-latest: true
+          cache-dependency-path: relay/go.sum
+      - name: Build the relay
+        working-directory: relay
+        run: go build -o "$RUNNER_TEMP/owp-relay" ./cmd/owp-relay
+      - run: dart pub get
+      # The formatter reads page_width from analysis_options.yaml from Dart 3.7 on, so format is checked on stable.
+      - if: matrix.dart == 'stable'
+        run: dart format --output=none --set-exit-if-changed .
+      - if: matrix.dart == 'stable'
+        run: dart analyze --fatal-infos
+      - name: Unit, vector and integration tests
+        run: dart test
+        env:
+          OWP_RELAY_BIN: ${{ runner.temp }}/owp-relay

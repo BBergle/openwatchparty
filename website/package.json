@@ -1,0 +1,15 @@
+{
+  "name": "openwatchparty-website",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview",
+    "check-links": "node scripts/check-links.mjs"
+  },
+  "devDependencies": {
+    "vitepress": "1.6.4"
+  }
+}

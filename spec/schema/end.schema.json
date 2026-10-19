@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openwatch.party/schema/v1/end.schema.json",
+  "title": "end (client → relay)",
+  "description": "SPEC.md §7.17.",
+  "type": "object",
+  "required": [
+    "type"
+  ],
+  "properties": {
+    "type": {
+      "const": "end"
+    }
+  }
+}

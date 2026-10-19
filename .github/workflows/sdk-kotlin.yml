@@ -1,0 +1,67 @@
+# Checks the Kotlin SDK (sdk/kotlin). The Linux job builds the JVM and Android targets and runs the conformance
+# vectors, the embedded relay list check and the integration tests; jvmTest builds the relay from relay/ with Go and
+# starts it itself. The macOS job builds the Apple targets and runs the vectors on macOS and the iOS and tvOS
+# simulators.
+name: sdk-kotlin
+
+on:
+  push:
+    paths:
+      - "sdk/kotlin/**"
+      - "relay/**"
+      - "conformance/vectors/**"
+      - "relays.json"
+      - ".github/workflows/sdk-kotlin.yml"
+  pull_request:
+    paths:
+      - "sdk/kotlin/**"
+      - "relay/**"
+      - "conformance/vectors/**"
+      - "relays.json"
+      - ".github/workflows/sdk-kotlin.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  jvm-android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/kotlin
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          check-latest: true
+          cache-dependency-path: relay/go.sum
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build, vectors and integration tests
+        run: ./gradlew --console=plain assemble check
+
+  apple:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: sdk/kotlin
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('sdk/kotlin/gradle/libs.versions.toml') }}
+      - name: Build Apple targets and run the vectors
+        run: >-
+          ./gradlew --console=plain -Popenwatchparty.android=false
+          compileKotlinIosArm64 compileKotlinTvosArm64
+          macosArm64Test iosSimulatorArm64Test tvosSimulatorArm64Test

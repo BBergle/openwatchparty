@@ -1,0 +1,9 @@
+{
+  "type": "status",
+  "epoch": 3,
+  "player": "ready",
+  "match": {
+    "state": "close"
+  },
+  "offsetMs": 0
+}

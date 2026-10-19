@@ -1,0 +1,49 @@
+# One self-hosted relay that terminates TLS itself, with a Let's Encrypt certificate for your own hostname.
+#
+# 1. Point an A record (and AAAA, if the server has IPv6) for your hostname at the server; open TCP 443.
+# 2. Next to this file, create .env with one line: OWP_DOMAIN=relay.example.com (your hostname).
+# 3. docker compose up -d
+#
+# Apps then reach it with Relays.at("https://relay.example.com"). Metrics: curl http://127.0.0.1:9090/metrics on the
+# server.
+name: owp-relay
+
+services:
+  relay:
+    image: ghcr.io/edde746/owp-relay:1
+    restart: unless-stopped
+    environment:
+      # TLS on an unprivileged port, published as 443 below, so the relay needs no capability. The certificate comes
+      # over TLS-ALPN-01 on this listener and is cached in /state/acme.
+      OWP_ADDR: ":8443"
+      OWP_TLS_DOMAINS: ${OWP_DOMAIN:?set OWP_DOMAIN in .env}
+      OWP_ADMIN_ADDR: ":9090"
+      OWP_STATE_DIR: /state
+      # Sized for the default 10000 connections at about 60 KiB each. To allow more, set OWP_MAX_CONNECTIONS and
+      # raise both limits in proportion.
+      GOMEMLIMIT: 800MiB
+    mem_limit: 1g
+    pids_limit: 128
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      # The only writable path: room snapshots, usage counts and the certificate.
+      - relay-state:/state
+    ports:
+      - "443:8443"
+      - "127.0.0.1:9090:9090"
+    stop_grace_period: 30s
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "5"
+
+networks:
+  default:
+    # Keeps IPv6 clients' addresses intact; the relay limits connections per client address.
+    enable_ipv6: true
+
+volumes:
+  relay-state:

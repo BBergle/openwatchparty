@@ -1,0 +1,10 @@
+{
+  "relays": [
+    {
+      "id": "a",
+      "name": "Relay A",
+      "url": "https://a.relay.example/v1/ws",
+      "prefixes": "2345678"
+    }
+  ]
+}

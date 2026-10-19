@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openwatch.party/schema/v1/info.schema.json",
+  "title": "GET /v1/info",
+  "description": "SPEC.md §5.3, §13.",
+  "type": "object",
+  "required": [
+    "protocol",
+    "id",
+    "limits",
+    "policy"
+  ],
+  "properties": {
+    "protocol": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "relays.schema.json#/$defs/relay/properties/id"
+    },
+    "limits": {
+      "type": "object",
+      "required": [
+        "maxParticipants",
+        "maxMessageBytes",
+        "maxMediaBytes",
+        "maxExtBytes",
+        "maxNameLength",
+        "maxClientLength",
+        "minRate",
+        "maxRate",
+        "maxConnections",
+        "maxConnectionsPerIp",
+        "maxRooms",
+        "maxRoomsPerIp",
+        "ipv6Factor56",
+        "ipv6Factor48",
+        "messageBurst",
+        "messagesPerSecond",
+        "joinBurst",
+        "joinsPerSecond",
+        "joinBurstTotal",
+        "joinsPerSecondTotal"
+      ],
+      "properties": {
+        "maxMessageBytes": {
+          "const": 8192
+        },
+        "maxMediaBytes": {
+          "const": 4096
+        },
+        "maxExtBytes": {
+          "const": 1024
+        },
+        "maxNameLength": {
+          "const": 32
+        },
+        "maxClientLength": {
+          "const": 64
+        },
+        "minRate": {
+          "const": 0.5
+        },
+        "maxRate": {
+          "const": 2
+        },
+        "maxParticipants": {
+          "$ref": "common.schema.json#/$defs/posInt",
+          "maximum": 20
+        },
+        "maxConnections": {
+          "$ref": "common.schema.json#/$defs/posInt"
+        },
+        "maxConnectionsPerIp": {
+          "$ref": "common.schema.json#/$defs/posInt"
+        },
+        "maxRooms": {
+          "$ref": "common.schema.json#/$defs/posInt"
+        },
+        "maxRoomsPerIp": {
+          "$ref": "common.schema.json#/$defs/posInt"
+        },
+        "ipv6Factor56": {
+          "$ref": "common.schema.json#/$defs/posInt"
+        },
+        "ipv6Factor48": {
+          "$ref": "common.schema.json#/$defs/posInt"
+        },
+        "messageBurst": {
+          "$ref": "common.schema.json#/$defs/posInt"
+        },
+        "messagesPerSecond": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "joinBurst": {
+          "$ref": "common.schema.json#/$defs/posInt"
+        },
+        "joinsPerSecond": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "joinBurstTotal": {
+          "$ref": "common.schema.json#/$defs/posInt"
+        },
+        "joinsPerSecondTotal": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "required": [
+        "stallGraceMs",
+        "stallReleaseMs",
+        "waitMs",
+        "mediaWaitMs",
+        "exclusionMs",
+        "startDelayMinMs",
+        "startDelayMaxMs",
+        "startDelayRttFactor",
+        "defaultRttMs",
+        "seekCoalesceMs",
+        "pauseToleranceMs",
+        "hostPromotionMs",
+        "resumeMs",
+        "maxRoomAgeMs"
+      ],
+      "properties": {
+        "stallGraceMs": {
+          "$ref": "common.schema.json#/$defs/nonNegInt"
+        },
+        "stallReleaseMs": {
+          "$ref": "common.schema.json#/$defs/nonNegInt"
+        },
+        "waitMs": {
+          "$ref": "common.schema.json#/$defs/nonNegInt"
+        },
+        "mediaWaitMs": {
+          "$ref": "common.schema.json#/$defs/nonNegInt"
+        },
+        "exclusionMs": {
+          "$ref": "common.schema.json#/$defs/nonNegInt"
+        },
+        "startDelayMinMs": {
+          "$ref": "common.schema.json#/$defs/nonNegInt"
+        },
+        "startDelayMaxMs": {
+          "$ref": "common.schema.json#/$defs/nonNegInt"
+        },
+        "defaultRttMs": {
+          "$ref": "common.schema.json#/$defs/nonNegInt"
+        },
+        "seekCoalesceMs": {
+          "$ref": "common.schema.json#/$defs/nonNegInt"
+        },
+        "pauseToleranceMs": {
+          "$ref": "common.schema.json#/$defs/nonNegInt"
+        },
+        "hostPromotionMs": {
+          "$ref": "common.schema.json#/$defs/nonNegInt"
+        },
+        "resumeMs": {
+          "$ref": "common.schema.json#/$defs/nonNegInt"
+        },
+        "maxRoomAgeMs": {
+          "$ref": "common.schema.json#/$defs/nonNegInt"
+        },
+        "startDelayRttFactor": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    }
+  }
+}

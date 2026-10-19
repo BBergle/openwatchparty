@@ -1,0 +1,14 @@
+{
+  "type": "room",
+  "rev": 1,
+  "code": "D4XN7P",
+  "epoch": 0,
+  "phase": "idle",
+  "positionMs": 0,
+  "atMs": 15023,
+  "rate": 1,
+  "control": "host",
+  "locked": false,
+  "waitingOn": [],
+  "participants": []
+}

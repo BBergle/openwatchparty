@@ -1,0 +1,41 @@
+{
+  "protocol": 1,
+  "id": "b",
+  "limits": {
+    "maxParticipants": 8,
+    "maxMessageBytes": 8192,
+    "maxMediaBytes": 4096,
+    "maxExtBytes": 1024,
+    "maxNameLength": 32,
+    "maxClientLength": 64,
+    "minRate": 0.5,
+    "maxRate": 2.0,
+    "maxConnections": 10000,
+    "maxConnectionsPerIp": 10,
+    "maxRooms": 10000,
+    "maxRoomsPerIp": 3,
+    "ipv6Factor56": 4,
+    "ipv6Factor48": 16,
+    "messageBurst": 30,
+    "messagesPerSecond": 10,
+    "joinBurst": 20,
+    "joinBurstTotal": 2000,
+    "joinsPerSecondTotal": 200
+  },
+  "policy": {
+    "stallGraceMs": 500,
+    "stallReleaseMs": 400,
+    "waitMs": 15000,
+    "mediaWaitMs": 30000,
+    "exclusionMs": 60000,
+    "startDelayMinMs": 750,
+    "startDelayMaxMs": 2000,
+    "startDelayRttFactor": 1.5,
+    "defaultRttMs": 500,
+    "seekCoalesceMs": 200,
+    "pauseToleranceMs": 2000,
+    "hostPromotionMs": 30000,
+    "resumeMs": 300000,
+    "maxRoomAgeMs": 86400000
+  }
+}
