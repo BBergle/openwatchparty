@@ -11,8 +11,10 @@ const MAX_EXT_BYTES = 1024;
 const encoder = new TextEncoder();
 
 /**
- * Null when the descriptor passes the send checks of SDK.md §9.7 (sizes measured on the SDK's compact JSON), else the
- * first rule it breaks. Apps trim `file.name` or `ext` and check again instead of getting `invalid_message`.
+ * Returns the first send rule a descriptor breaks, or null when it passes them all.
+ *
+ * The rules are the send checks of SDK.md §9.7, with sizes measured on the SDK's compact JSON. When a descriptor
+ * fails, apps trim `file.name` or `ext` and check again, instead of getting `invalid_message` from `setMedia`.
  */
 export function checkMedia(media: unknown): string | null {
   const checked = sendable(media);
@@ -20,8 +22,11 @@ export function checkMedia(media: unknown): string | null {
 }
 
 /**
- * Decodes a descriptor with the receive checks of SDK.md §9.7, as the SDK checks one from the relay: the send-only size
- * limits don't apply. Returns a fresh frozen copy; unknown members outside `ext` are dropped. Throws `invalid_message`.
+ * Decodes a descriptor and applies the receive checks of SDK.md §9.7.
+ *
+ * These are the checks the SDK makes on a descriptor from the relay, so the send-only size limits don't apply. It
+ * returns a fresh frozen copy, which drops the unknown members outside `ext`. It throws `invalid_message` when the
+ * value fails a check.
  */
 export function parseMedia(value: unknown): Media {
   const checked = received(value);

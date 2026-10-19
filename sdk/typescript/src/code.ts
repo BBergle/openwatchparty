@@ -20,7 +20,11 @@ export function normalizeCode(input: string): string {
   return out;
 }
 
-/** A code in two groups for display: `K7M-Q2X`. Throws `invalid_code`. */
+/**
+ * Formats a room code for display in two groups, such as `K7M-Q2X`.
+ *
+ * Throws `invalid_code` when `code` isn't a room code.
+ */
 export function formatCode(code: string): string {
   const c = normalizeCode(code);
   return `${c.slice(0, 3)}-${c.slice(3)}`;

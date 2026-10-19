@@ -1,4 +1,8 @@
-/** Opens a WebSocket to a relay URL. Defaults to the global `WebSocket`. */
+/**
+ * Opens a WebSocket to a relay URL.
+ *
+ * Without one, the party uses the global `WebSocket`.
+ */
 export type Connect = (url: string) => WebSocket;
 
 /** @internal Where sockets and local time come from; tests replace them. */

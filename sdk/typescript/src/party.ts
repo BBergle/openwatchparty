@@ -39,17 +39,21 @@ import type {
 
 export interface WatchPartyOptions<T> {
   relays: Relays;
-  /** `<app>/<version>` naming the real app: `Example/1.31.0`. */
+  /** The real app's name and version as `<app>/<version>`, such as `Example/1.31.0`. */
   client: string;
-  /** The user's display name: 1–32 characters. */
+  /** The user's display name, 1 to 32 characters long. */
   name: string;
-  /** The app's search. Without one, other participants' media has no candidates: `match` is `unavailable`. */
+  /**
+   * The app's search, which finds the candidates for other participants' media.
+   *
+   * Without one, that media has no candidates, and `match` is `unavailable`.
+   */
   resolver?: Resolver<T>;
-  /** Opens sockets; defaults to the global `WebSocket`. */
+  /** Opens sockets. The default is the global `WebSocket`. */
   connect?: Connect;
-  /** Local monotonic time in ms, rounded down to an integer; defaults to `performance.now()`. */
+  /** Local monotonic time in ms, which the SDK rounds down to an integer. The default is `performance.now()`. */
   nowMs?: () => number;
-  /** Random numbers in [0, 1); defaults to `Math.random`. */
+  /** Random numbers in [0, 1). The default is `Math.random`. */
   random?: () => number;
 }
 
@@ -115,8 +119,10 @@ const lingering = new WeakSet<Link>();
 const NO_CANDIDATES: readonly Ranked<never>[] = Object.freeze([]);
 
 /**
- * One participant's session: connection, room state, matching, status and following (SDK.md §16.2). The app supplies
- * a resolver, attaches its player and routes the user's controls here.
+ * One participant's session in a room (SDK.md §16.2).
+ *
+ * The party handles the connection, the room state, matching, status and following the room. The app supplies a
+ * resolver, attaches its player and routes the user's controls here.
  */
 export class WatchParty<T = unknown> {
   readonly #relays: Relays;
@@ -206,12 +212,20 @@ export class WatchParty<T = unknown> {
     this.#state = this.#build();
   }
 
-  /** Everything the UI shows. A new frozen object on every change. */
+  /**
+   * Everything the UI shows, as one value.
+   *
+   * It is a new frozen object on every change.
+   */
   get state(): PartyState<T> {
     return this.#state;
   }
 
-  /** Listens for state changes or events; returns a function that stops listening. */
+  /**
+   * Listens for state changes or events.
+   *
+   * Returns a function that stops listening.
+   */
   on(type: "state", listener: (state: PartyState<T>) => void): () => void;
   on(type: "event", listener: (event: PartyEvent) => void): () => void;
   on(type: "state" | "event", listener: ((state: PartyState<T>) => void) | ((event: PartyEvent) => void)): () => void {
@@ -224,9 +238,13 @@ export class WatchParty<T = unknown> {
   // Create, join, leave
 
   /**
-   * Creates a room and joins it as host (SDK.md §6). Resolves with the room code. With one relay in the list it creates
-   * there; with several, on the first to answer a clock ping. A relay that answers `relay_full` passes the create on to
-   * the next untried relay in list order; when none is left, it rejects with the last relay's `relay_full`.
+   * Creates a room and joins it as host (SDK.md §6).
+   *
+   * Resolves with the room code. With one relay in the list, the room is created there. With several, it is created
+   * on the first relay to answer a clock ping.
+   *
+   * A relay that answers `relay_full` passes the create on to the next untried relay, in list order. When none is
+   * left, the call rejects with the last relay's `relay_full`.
    */
   async create(): Promise<string> {
     const signal = this.#begin();
@@ -287,7 +305,12 @@ export class WatchParty<T = unknown> {
     }
   }
 
-  /** Leaves the room: sends `leave` and ends with `left`. While connecting, cancels the attempt. */
+  /**
+   * Leaves the room.
+   *
+   * The party sends `leave` and ends with `left`. While the party is still connecting, `leave` cancels the attempt
+   * instead.
+   */
   leave(): void {
     if (this.#attempt !== null) {
       this.#attempt.abort();
@@ -303,9 +326,10 @@ export class WatchParty<T = unknown> {
   }
 
   /**
-   * Leaves the room if in one and releases everything, the attached adapter included; the party can't be used again.
-   * Resolves, never rejects, once no released adapter has a command running or queued: await it before disposing the
-   * player.
+   * Leaves the room, if the party is in one, and releases everything, the attached adapter included.
+   *
+   * The party can't be used again. The returned promise never rejects. It resolves once no released adapter has a
+   * command running or queued, so await it before disposing of the player.
    */
   close(): Promise<void> {
     if (!this.#closed) {
@@ -322,12 +346,17 @@ export class WatchParty<T = unknown> {
   // Player
 
   /**
-   * Attaches the app's player, with `ref`, the `ref` of the file it has open: normally `state.choice.ref`, or as host
-   * the `ref` passed to `setMedia`. Call it once per file the player opens. The SDK follows the room with this player
-   * only while `state.choice.ref === ref` and the current media matched (SDK.md §10.2), so a player still holding an
-   * earlier choice's file is never commanded. Attaching the same player again replaces its ref and keeps its commands.
-   * It works outside a room too: a player attached while idle or after `ended` is followed in the next session. The
-   * party's end releases the player, so after `ended` attach a player that still has its file open again.
+   * Attaches the app's player, together with `ref`, the `ref` of the file the player has open.
+   *
+   * `ref` is normally `state.choice.ref`. As host, it is the `ref` passed to `setMedia`. Call `attachPlayer` once per
+   * file the player opens.
+   *
+   * The SDK follows the room with this player only while `state.choice.ref === ref` and the current media matched
+   * (SDK.md §10.2). A player still holding an earlier choice's file is therefore never commanded. Attaching the same
+   * player again replaces its ref and keeps its commands.
+   *
+   * It works outside a room too. A player attached while idle or after `ended` is followed in the next session. The
+   * party's end releases the player, so after `ended`, attach a player that still has its file open again.
    */
   attachPlayer(player: PlayerAdapter, ref: T): void {
     this.#usable();
@@ -346,9 +375,11 @@ export class WatchParty<T = unknown> {
   }
 
   /**
-   * The user left the player: the room doesn't wait for this participant. With `player`, only when that is the
-   * attached adapter; otherwise nothing changes. Resolves, never rejects, once no released adapter has a command
-   * running or queued: await it before disposing the player.
+   * Tells the SDK the user left the player, so the room doesn't wait for this participant.
+   *
+   * With `player`, it acts only when that is the attached adapter, and otherwise changes nothing. The returned promise
+   * never rejects. It resolves once no released adapter has a command running or queued, so await it before
+   * disposing of the player.
    */
   detachPlayer(player?: PlayerAdapter): Promise<void> {
     this.#usable();
@@ -383,7 +414,7 @@ export class WatchParty<T = unknown> {
     this.#step();
   }
 
-  /** Declines the offered file: this participant doesn't play the media. */
+  /** Declines the offered file, so this participant doesn't play the media. */
   declineMismatch(): void {
     this.#usable();
     const offered = this.#mismatch;
@@ -396,9 +427,14 @@ export class WatchParty<T = unknown> {
   }
 
   /**
-   * Takes a file the user picked by hand: it becomes `choice`, also when it has the current choice's id. Resolves false
-   * without media, when its probe fails, or when a later `choose` or the end of matching cancels it; nothing changes
-   * then.
+   * Takes a file the user picked by hand as the new `choice`.
+   *
+   * The file becomes `choice` even when it has the current choice's id. The call resolves false, and nothing changes,
+   * in these cases:
+   *
+   * - There is no media.
+   * - The file has no known duration, and it has no probe or its probe fails.
+   * - A later `choose`, or the end of matching, cancels it.
    */
   async choose(candidate: Candidate<T>): Promise<boolean> {
     this.#usable();
@@ -439,9 +475,12 @@ export class WatchParty<T = unknown> {
   }
 
   /**
-   * Runs the resolver again for the current media; nothing without media or for the party's own media. The offset and
-   * what plays stay. Without a choice, matching starts over (SDK.md §9.1). With one, only `candidates` changes, to the
-   * resolver's new list, ranked: offer it for `choose`.
+   * Runs the resolver again for the current media.
+   *
+   * It does nothing without media, or for the party's own media. The offset and what plays stay as they are.
+   *
+   * - Without a choice, matching starts over (SDK.md §9.1).
+   * - With a choice, only `candidates` changes, to the resolver's new list, ranked. Offer that list for `choose`.
    */
   resolveAgain(): void {
     this.#usable();
@@ -489,7 +528,11 @@ export class WatchParty<T = unknown> {
     this.#holdFor("pause");
   }
 
-  /** Moves the room to `positionMs`, an integer ≥ 0, in the app's own file. */
+  /**
+   * Moves the room to `positionMs` in the app's own file.
+   *
+   * `positionMs` must be an integer ≥ 0.
+   */
   seek(positionMs: number): void {
     this.#member();
     this.#needMedia();
@@ -511,7 +554,7 @@ export class WatchParty<T = unknown> {
     if (seeks) this.#changed();
   }
 
-  /** Sets the room's rate, 0.5 to 2.0. */
+  /** Sets the room's rate, from 0.5 to 2.0. */
   setRate(rate: number): void {
     this.#member();
     this.#needMedia();
@@ -526,7 +569,12 @@ export class WatchParty<T = unknown> {
     this.#holdFor("rate");
   }
 
-  /** Sets this participant's offset: local position = room position + offset. An integer within ±604800000 (7 days). */
+  /**
+   * Sets this participant's offset.
+   *
+   * The local position is the room position plus the offset. `offsetMs` must be an integer within ±604800000, which
+   * is 7 days.
+   */
   setOffset(offsetMs: number): void {
     this.#usable();
     if (!Number.isSafeInteger(offsetMs) || Math.abs(offsetMs) > MAX_OFFSET_MS) {
@@ -538,10 +586,13 @@ export class WatchParty<T = unknown> {
   }
 
   /**
-   * Host: shares the media this party plays, starting at `positionMs` of its own file. `ref` is the app's value that
-   * reopens that file. While the room plays this descriptor, `state.choice` is a candidate with id `""` and this `ref`:
-   * a player attached with this `ref` follows the room once it arrives, and after handing host over and leaving the
-   * player, the user opens it again like any guest. The SDK sends and keeps its own copy of `media`.
+   * As host, shares the media this party plays, starting at `positionMs` of its own file.
+   *
+   * `ref` is the app's value that reopens that file. While the room plays this descriptor, `state.choice` is a
+   * candidate with id `""` and this `ref`. A player attached with this `ref` follows the room once the media arrives.
+   * After handing host over and leaving the player, the user opens the file again like any guest.
+   *
+   * The SDK sends its own copy of `media`, and keeps it.
    */
   setMedia(media: Media, ref: T, positionMs = 0): void {
     this.#member();
@@ -557,14 +608,14 @@ export class WatchParty<T = unknown> {
     this.#changed();
   }
 
-  /** Host: stops the media. */
+  /** As host, stops the media. */
   clearMedia(): void {
     this.#member();
     this.#needHost();
     this.#link!.send({ type: "clearMedia" });
   }
 
-  /** Host: who may play, pause, seek and set the rate. */
+  /** As host, sets who may play, pause, seek and set the rate. */
   setControl(mode: Control): void {
     this.#member();
     this.#needHost();
@@ -572,7 +623,7 @@ export class WatchParty<T = unknown> {
     this.#link!.send({ type: "setControl", mode });
   }
 
-  /** Host: makes another participant the host. */
+  /** As host, makes another participant the host. */
   transferHost(peerId: string): void {
     this.#member();
     this.#needHost();
@@ -580,7 +631,7 @@ export class WatchParty<T = unknown> {
     this.#link!.send({ type: "transferHost", peerId });
   }
 
-  /** Host: removes a participant from the room. */
+  /** As host, removes a participant from the room. */
   kick(peerId: string): void {
     this.#member();
     this.#needHost();
@@ -588,7 +639,11 @@ export class WatchParty<T = unknown> {
     this.#link!.send({ type: "kick", peerId });
   }
 
-  /** Host: refuses (true) or allows (false) new joins. */
+  /**
+   * As host, refuses or allows new joins.
+   *
+   * With `locked` true the room refuses new joins, and with `locked` false it allows them.
+   */
   lock(locked: boolean): void {
     this.#member();
     this.#needHost();
@@ -596,14 +651,22 @@ export class WatchParty<T = unknown> {
     this.#link!.send({ type: "lock", locked });
   }
 
-  /** Host: ends the room for everyone. The party ends with `ended` once the relay confirms. */
+  /**
+   * As host, ends the room for everyone.
+   *
+   * The party ends with `ended` once the relay confirms.
+   */
   end(): void {
     this.#member();
     this.#needHost();
     this.#link!.send({ type: "end" });
   }
 
-  /** The room position now, in the reference file; null without media or a clock sample. */
+  /**
+   * The room's position now, in the reference file.
+   *
+   * Returns null without media or without a clock sample.
+   */
   roomPositionMs(): number | null {
     const now = this.#relayNow();
     if (this.#media === null || this.#room === null || now === null) return null;

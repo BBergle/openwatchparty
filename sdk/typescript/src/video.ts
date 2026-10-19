@@ -79,26 +79,32 @@ function adapterFor(video: HTMLMediaElement): { adapter: PlayerAdapter; commande
 }
 
 /**
- * Wraps an `HTMLMediaElement` (`<video>` or `<audio>`) in a `PlayerAdapter`, and nothing else: the element's own
- * controls aren't routed to a party. For pages the app doesn't own, such as an extension's; pass the adapter to
- * `attachPlayer`. An app's own page uses `attachVideo`. Its `play` throws when the element refuses to start, such as
- * under the browser's autoplay policy; the party then emits `playBlocked`.
+ * Wraps an `HTMLMediaElement`, a `<video>` or `<audio>` element, in a `PlayerAdapter`.
+ *
+ * It does nothing else, so the element's own controls aren't routed to a party. Use it on pages the app doesn't own,
+ * such as an extension's, and pass the adapter to `attachPlayer`. An app's own page uses `attachVideo` instead.
+ *
+ * The adapter's `play` throws when the element refuses to start, such as under the browser's autoplay policy. The
+ * party then emits `playBlocked`.
  */
 export function videoAdapter(video: HTMLMediaElement): PlayerAdapter {
   return adapterFor(video).adapter;
 }
 
 /**
- * Wraps an `HTMLMediaElement` (`<video>` or `<audio>`) in a `PlayerAdapter` (`videoAdapter`), attaches it to the party
- * with `ref`, the `ref` of the file the element has open, and routes the element's own controls to the party: a press
- * on the native play, pause, seek or speed control becomes the party command, and the SDK's own commands are not
- * mistaken for presses. While the user drags the seek bar, at most one `seek` per 250 ms goes to the room, with the
- * latest position, and the final position follows within 250 ms. Call it once per file, once the element has the file
- * open.
+ * Attaches an `HTMLMediaElement` to the party and routes the element's own controls to it.
  *
- * Returns a cleanup that removes the listeners and detaches this adapter only, never a newer one, and resolves with
- * `detachPlayer`'s completion: await it before disposing the element. After `close()`, it resolves at once; await
- * `close()` instead.
+ * The element, a `<video>` or `<audio>` element, is wrapped in a `PlayerAdapter` as `videoAdapter` does, and attached
+ * with `ref`, the `ref` of the file the element has open. Call `attachVideo` once per file, once the element has the
+ * file open.
+ *
+ * A press on the element's native play, pause, seek or speed control becomes the matching party command. The SDK's
+ * own commands are not mistaken for presses. While the user drags the seek bar, at most one `seek` per 250 ms goes to
+ * the room, with the latest position, and the final position follows within 250 ms.
+ *
+ * Returns a cleanup function. It removes the listeners and detaches this adapter only, never a newer one. It resolves
+ * with `detachPlayer`'s completion, so await it before disposing of the element. After `close()` it resolves at once,
+ * so await `close()` instead.
  */
 export function attachVideo<T>(party: WatchParty<T>, video: HTMLMediaElement, ref: T): () => Promise<void> {
   const { adapter, commanded } = adapterFor(video);

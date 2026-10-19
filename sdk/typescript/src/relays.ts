@@ -7,8 +7,15 @@ import type { Relay } from "./types.ts";
 
 export interface RelaysOptions {
   /**
-   * Fetches a URL and returns the body (SDK.md §3.4). It must stop when `signal` aborts (5 s after the start), must
-   * not follow redirects and must fail on any status other than 200. Defaults to `fetch` with `redirect: "error"`.
+   * Fetches a URL and returns the body (SDK.md §3.4).
+   *
+   * The function you pass must follow three rules:
+   *
+   * - It must stop when `signal` aborts, which happens 5 s after the start.
+   * - It must not follow redirects.
+   * - It must fail on any status other than 200.
+   *
+   * The default is `fetch` with `redirect: "error"`.
    */
   httpGet?: (url: string, signal: AbortSignal) => Promise<string>;
 }
@@ -23,8 +30,10 @@ const REFRESH_AFTER_MS = 24 * 60 * 60 * 1000;
 const encoder = new TextEncoder();
 
 /**
- * One relay list and its refresh schedule (SDK.md §3). Keep one per app and pass it to every party:
- * `Relays.public()` for the public relays, `Relays.at(baseUrl)` for one self-hosted relay.
+ * One relay list and its refresh schedule (SDK.md §3).
+ *
+ * Keep one per app and pass it to every party. Use `Relays.public()` for the public relays, or `Relays.at(baseUrl)`
+ * for one self-hosted relay.
  */
 export class Relays {
   /** Null for `Relays.at`, which never fetches. */
@@ -38,14 +47,20 @@ export class Relays {
     this.#httpGet = httpGet;
   }
 
-  /** The public relays: the list compiled into the SDK, refreshed from `https://openwatch.party/relays.json` only. */
+  /**
+   * The public relays, starting from the list compiled into the SDK.
+   *
+   * The list is refreshed from `https://openwatch.party/relays.json` only.
+   */
   static public(options: RelaysOptions = {}): Relays {
     return new Relays(parseRelayList(PUBLIC_RELAYS)!, options.httpGet ?? fetchText);
   }
 
   /**
-   * One self-hosted relay by its base URL (`https://relay.example.com`, `http://192.168.1.5:8080/owp`), for everything:
-   * no list is ever fetched. Throws `invalid_message` for a base URL that can't be one.
+   * One self-hosted relay, given by its base URL, used for everything.
+   *
+   * A base URL looks like `https://relay.example.com` or `http://192.168.1.5:8080/owp`. No list is ever fetched.
+   * Throws `invalid_message` for a base URL that can't be one.
    */
   static at(baseUrl: string): Relays {
     const base = baseUrl.replace(/\/+$/, "");
@@ -61,7 +76,11 @@ export class Relays {
     return this.#list;
   }
 
-  /** The relay that owns a code; null for an invalid code or a symbol nobody owns. */
+  /**
+   * Finds the relay that owns a room code.
+   *
+   * Returns null for an invalid code, or for a code whose first symbol no relay owns.
+   */
   relayFor(code: string): Relay | null {
     try {
       return routeCode(normalizeCode(code), this.#list);
@@ -71,8 +90,10 @@ export class Relays {
   }
 
   /**
-   * A forced refresh: one GET of the public source. False when it gave no valid list; the list then stays. On
-   * `Relays.at` it does nothing and returns true.
+   * Forces a refresh with one GET of the public source.
+   *
+   * Resolves false when the GET gave no valid list, and the list then stays as it was. On `Relays.at` it does nothing
+   * and resolves true.
    */
   async refresh(): Promise<boolean> {
     const httpGet = this.#httpGet;
