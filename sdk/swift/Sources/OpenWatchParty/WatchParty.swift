@@ -32,7 +32,7 @@ public final class WatchParty<Ref: Equatable & Sendable> {
     ///
     /// - Parameters:
     ///   - relays: The relay list the party creates and joins rooms with. An app keeps one for all its parties.
-    ///   - client: The app's `<name>/<version>`, such as `Example/1.0`, in 1 to 64 characters. Everyone in the room
+    ///   - client: The app's `<app>/<version>`, such as `Example/1.0`, in 1 to 64 characters. Everyone in the room
     ///     sees it, and the relay's terms use it.
     ///   - name: The user's display name, in 1 to 32 characters.
     ///   - resolver: Finds the user's files for other participants' media. Without a resolver, the party never

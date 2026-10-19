@@ -127,7 +127,7 @@ The throwing initializer is `WatchParty<Ref>(relays:client:name:resolver:connect
 | Parameter | Type | What it is |
 |---|---|---|
 | `relays` | `Relays` | The app's relay list. |
-| `client` | `String` | Your app and its version, as `<name>/<version>`. |
+| `client` | `String` | Your app and its version, as `<app>/<version>`. |
 | `name` | `String` | The user's display name, 1–32 characters. |
 | `resolver` | `Resolver<Ref>?` | Your search for the user's own files. Defaults to `nil`. |
 | `connect` | `WebSocketConnect?` | Opens the WebSockets. Defaults to `urlSessionConnect`. |

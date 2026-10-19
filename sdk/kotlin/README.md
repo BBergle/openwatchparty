@@ -219,7 +219,7 @@ The constructor takes these parameters. `T` is the type of the app's `ref` in ca
 | Parameter | Type | What it is |
 |---|---|---|
 | `relays` | `Relays` | The app's relay list. |
-| `client` | `String` | Your app and its version, as `<name>/<version>`. |
+| `client` | `String` | Your app and its version, as `<app>/<version>`. |
 | `name` | `String` | The user's display name, 1–32 characters. |
 | `resolver` | `Resolver<T>? = null` | Your search for the user's own files. |
 | `scope` | `CoroutineScope` | Where the party runs. See [Threading](#threading). |
