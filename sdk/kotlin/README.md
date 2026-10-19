@@ -1,10 +1,12 @@
 # Kotlin SDK
 
-`party.openwatch:openwatchparty` is a Kotlin Multiplatform SDK that keeps players in different apps in sync in one room, implementing the behaviour in [`spec/SDK.md`](../../spec/SDK.md); read that for the rules this page only names.
+`party.openwatch:openwatchparty` is a Kotlin Multiplatform SDK that keeps players in different apps in sync in one room. Each person in the room plays their own copy of the title, and a relay keeps the copies together.
+
+The SDK implements the client behaviour in [`spec/SDK.md`](../../spec/SDK.md). This page names the rules the SDK follows, and SDK.md explains them in full.
 
 ## Install
 
-From `mavenCentral()`, in a JVM or Android module:
+In a JVM or Android module, add the SDK and a Ktor engine from `mavenCentral()`:
 
 ```kotlin
 dependencies {
@@ -13,7 +15,7 @@ dependencies {
 }
 ```
 
-In a Kotlin Multiplatform module, depend on the SDK from `commonMain` and add a Ktor engine per target:
+In a Kotlin Multiplatform module, depend on the SDK from `commonMain`, and add a Ktor engine for each target:
 
 ```kotlin
 kotlin {
@@ -25,11 +27,33 @@ kotlin {
 }
 ```
 
-No Ktor engine is bundled, and the engine must support WebSockets (OkHttp on JVM and Android, Darwin on Apple; not Apache5, Jetty or the Android engine). With no engine argument in common code, Ktor picks the engine from each target's dependencies.
+No Ktor engine is bundled, and the engine you add must support WebSockets:
+
+- On JVM and Android, use OkHttp.
+- On Apple platforms, use Darwin.
+- Apache5, Jetty and the Android engine don't work.
+
+With no engine argument in common code, Ktor picks the engine from each target's dependencies.
 
 ## Requirements
 
-Targets are `jvm`, Android, `iosArm64`, `iosSimulatorArm64`, `macosArm64`, `tvosArm64` and `tvosSimulatorArm64`, all from `commonMain` code. Apple targets produce klibs, so a Swift-only app needs its own Kotlin Multiplatform module depending on the SDK. JVM and Android bytecode targets 17, and Android uses `compileSdk = 37` with `minSdk = 26`. The SDK is built with Kotlin 2.4.10, AGP 9.4.1, Ktor 3.6.0, kotlinx-coroutines 1.11.0 and kotlinx-serialization 1.11.0; an Android app on AGP 9 whose built-in Kotlin is older than 2.3 must pin the Kotlin Gradle plugin:
+The SDK builds all its targets from `commonMain` code: `jvm`, Android, `iosArm64`, `iosSimulatorArm64`, `macosArm64`, `tvosArm64` and `tvosSimulatorArm64`.
+
+Apple targets produce klibs. A Swift-only app therefore needs its own Kotlin Multiplatform module that depends on the SDK.
+
+JVM and Android bytecode targets 17. Android uses `compileSdk = 37` with `minSdk = 26`.
+
+The SDK is built with these versions:
+
+| Tool or library | Version |
+|---|---|
+| Kotlin | 2.4.10 |
+| AGP | 9.4.1 |
+| Ktor | 3.6.0 |
+| kotlinx-coroutines | 1.11.0 |
+| kotlinx-serialization | 1.11.0 |
+
+An Android app on AGP 9 whose built-in Kotlin is older than 2.3 must pin the Kotlin Gradle plugin:
 
 ```kotlin
 buildscript {
@@ -39,6 +63,8 @@ buildscript {
 ```
 
 ## Quick start
+
+This example creates a room, or joins one by its code. Whenever the SDK chooses a file, the example opens it and attaches the player. It also shares a title as host, and sends the user's controls through the party. `ExamplePlayer` and `searchLibrary` stand in for your app's own player and library.
 
 ```kotlin
 import io.ktor.client.HttpClient
@@ -158,75 +184,268 @@ fun onSeek(party: WatchParty<String>, positionMs: Long) = party.seek(positionMs)
 fun onLeave(party: WatchParty<String>) = party.close() // join the returned Job before disposing the player
 ```
 
-Subscribe to `events` before `create`/`join`: it has no replay, though it drops nothing while subscribed.
-
 ## Relays
 
-The app's `HttpClient` given here is the SDK's only transport, it must have the `WebSockets` plugin installed, and the SDK never closes it. `Relays.public(http)` starts from the copy of [`relays.json`](../../relays.json) compiled into the SDK, and a [self-hosted relay](../../relay/README.md) is `Relays.at(http, "https://relay.example.com")`, that one relay for every room, never fetched.
+A `Relays` object tells your parties which relays exist and which one owns a room code. Create one for the whole app and pass it to every party, as the quick start does.
 
-| Member | Signature |
+Both kinds of list take your app's Ktor `HttpClient`, which is the SDK's only transport. It must have the `WebSockets` plugin installed, and the SDK never closes it.
+
+- `Relays.public(http)` uses the public relays. It starts from the copy of [`relays.json`](../../relays.json) compiled into the SDK.
+- `Relays.at(http, "https://relay.example.com")` uses one [self-hosted relay](../../relay/README.md) for every room, and it never fetches a list.
+
+| Member | What it does |
 |---|---|
-| public list | `Relays.public(http: HttpClient): Relays` |
-| self-hosted | `Relays.at(http: HttpClient, baseUrl: String): Relays` |
-| list | `val list: List<Relay>` |
-| route | `fun relayFor(code: String): Relay?` |
-| refresh | `suspend fun refresh(): Boolean` |
+| `Relays.public(http: HttpClient): Relays` | Creates a list of the public relays. |
+| `Relays.at(http: HttpClient, baseUrl: String): Relays` | Creates a list of one self-hosted relay. |
+| `val list: List<Relay>` | The relays in use. |
+| `fun relayFor(code: String): Relay?` | Finds the relay that owns a room code. |
+| `suspend fun refresh(): Boolean` | Fetches the public list now, and returns whether a valid list came back. |
 
-`Relay` is `(id, name, url, prefixes)`, and `refresh()` returns false when the public source gave no valid list, leaving the list in use. A `Relays.at` list is one `custom` relay owning every code, whose `refresh()` does nothing and returns true. `Relays.at` throws `PartyException` with code `invalid_message` when `baseUrl` isn't `https://` or `http://` followed by a host, or gives a relay URL that [`spec/SDK.md`](../../spec/SDK.md) §3.2 refuses.
+A `Relay` is `(id, name, url, prefixes)`. When `refresh()` returns false because the public source gave no valid list, the list in use stays.
+
+A `Relays.at` list is one `custom` relay that owns every code. Its `refresh()` does nothing and returns true. `Relays.at` throws a `PartyException` with the code `invalid_message` in two cases:
+
+- `baseUrl` isn't `https://` or `http://` followed by a host.
+- `baseUrl` gives a relay URL that [`spec/SDK.md`](../../spec/SDK.md) §3.2 refuses.
 
 ## WatchParty
 
-`T` is the type of the app's `ref` in candidates. The constructor is `WatchParty(relays: Relays, client: String, name: String, resolver: Resolver<T>? = null, scope: CoroutineScope, clock: MonotonicClock = MonotonicClock.System, random: Random = Random.Default)`. It throws `PartyException` with code `invalid_message` for a bad `client` (`<name>/<version>`) or `name` (1–32 characters). Without a resolver the party never searches: for others' media `match` is `unavailable` at once.
+A `WatchParty` is one participant's session. It connects to a relay, keeps the room's state, matches the room's media to the user's own files and drives your player.
 
-| Group | Members |
+### Creating a party
+
+The constructor takes these parameters. `T` is the type of the app's `ref` in candidates, the value your app uses to open a file.
+
+| Parameter | Type | What it is |
+|---|---|---|
+| `relays` | `Relays` | The app's relay list. |
+| `client` | `String` | Your app and its version, as `<name>/<version>`. |
+| `name` | `String` | The user's display name, 1–32 characters. |
+| `resolver` | `Resolver<T>? = null` | Your search for the user's own files. |
+| `scope` | `CoroutineScope` | Where the party runs. See [Threading](#threading). |
+| `clock` | `MonotonicClock = MonotonicClock.System` | The monotonic local clock. |
+| `random` | `Random = Random.Default` | Drives the spread of reconnects. |
+
+The constructor throws a `PartyException` with the code `invalid_message` for a bad `client` or `name`. Without a resolver, the party never searches, so `match` is `unavailable` at once for other participants' media.
+
+### State and session
+
+| Member | What it does |
 |---|---|
-| session | `suspend fun create(): String`, `suspend fun join(code: String)`, `fun leave()`, `fun close(): Job` |
-| player | `fun attachPlayer(player: PlayerAdapter, ref: T)`, `fun detachPlayer(player: PlayerAdapter? = null): Job`, `fun playerChanged()` |
-| matching | `fun acceptMismatch()`, `fun declineMismatch()`, `suspend fun choose(candidate: Candidate<T>): Boolean`, `fun resolveAgain()` |
-| playback | `fun play()`, `fun pause()`, `fun seek(positionMs: Long)`, `fun setRate(rate: Double)`, `fun setOffset(offsetMs: Long)` |
-| host | `fun setMedia(media: Media, ref: T, positionMs: Long = 0)`, `fun clearMedia()`, `fun setControl(mode: Control)`, `fun transferHost(peerId: String)`, `fun kick(peerId: String)`, `fun lock(locked: Boolean)`, `fun end()` |
-| position | `fun roomPositionMs(): Long?` |
+| `state` | Everything the UI shows, as one value. |
+| `events` | What happens in the room. |
+| `suspend fun create(): String` | Creates a room on the first relay to answer, joins it as host and returns its code. |
+| `suspend fun join(code: String)` | Joins a room by a typed or pasted code, such as `k7m-q2x`. |
+| `fun leave()` | Leaves the room. |
+| `fun close(): Job` | Leaves the room and releases everything. |
+| `fun roomPositionMs(): Long?` | The room's position now. |
 
-`create()` creates a room on the first relay to answer and returns its code. `join` accepts a typed or pasted code such as `k7m-q2x`. The host row is host-only. `seek` takes a position in the user's own file. `setRate` takes 0.5 to 2.0. `setOffset` takes at most 604800000 ms either way. The SDK copies what the app passes in and publishes read-only collections. `leave()` during `create`/`join` cancels them, and after `close()`, `create`/`join` throw `IllegalStateException`.
+`leave()` during `create` or `join` cancels them. After `close()`, `create` and `join` throw `IllegalStateException`.
 
-| `PartyState<T>` field | Meaning |
+### Matching and the player
+
+| Member | What it does |
 |---|---|
-| `connection`, `peerId`, `endReason` | session status, own peer ID, why it ended |
-| `room`, `media` | last snapshot, current descriptor |
-| `match`, `choice`, `mismatch`, `candidates` | match, file to open, file offered, ranked files |
-| `offsetMs`, `player` | local offset, reported player state |
-| `me`, `isHost`, `canControl` | own participant, host, may control playback |
+| `fun acceptMismatch()` | Plays the offered file, though its duration differs. |
+| `fun declineMismatch()` | Declines the offered file. |
+| `suspend fun choose(candidate: Candidate<T>): Boolean` | Takes a file the user picked by hand. |
+| `fun resolveAgain()` | Searches again for the current media. |
+| `fun attachPlayer(player: PlayerAdapter, ref: T)` | Lets the SDK drive your player, which has the file of `ref` open. |
+| `fun detachPlayer(player: PlayerAdapter? = null): Job` | Stops driving the player when the user leaves it. |
+| `fun playerChanged()` | Tells the SDK the player's state changed, so it reads it now. |
 
-`state` is a `StateFlow<PartyState<T>>` and `events` a `SharedFlow<PartyEvent>` with `Action`, `ParticipantJoined`, `ParticipantLeft`, `Error`, `ResolveFailed`, `PlayBlocked` and `Ended`; `PartyEvent` is non-sealed and may grow in 1.x, so use an `else` branch. `Media` is `(kind, title, durationMs, year, ids, series, season, episode, file, ext)` with `MediaKind` `MOVIE`/`EPISODE`/`VIDEO`, an episode needing `series` and `ext` keyed by a reverse-DNS name such as `com.example`. Enum values are upper-case (`Phase.PLAYING`, `EndReason.LOST`).
+[Player and resolver](#player-and-resolver) explains how to use the player members.
+
+### Playback
+
+These commands act on the whole room. Send the user's presses through them, not straight to the player.
+
+| Member | What it does |
+|---|---|
+| `fun play()` | Asks the room to play. |
+| `fun pause()` | Pauses the room. |
+| `fun seek(positionMs: Long)` | Moves the room to a position in the user's own file. |
+| `fun setRate(rate: Double)` | Sets the room's rate, from 0.5 to 2.0. |
+| `fun setOffset(offsetMs: Long)` | Sets your local offset from the room's position. |
+
+The offset you set with `setOffset` applies only to your own player. It may be at most 604800000 ms, or 7 days, either way.
+
+### Host controls
+
+Only the host may use these.
+
+| Member | What it does |
+|---|---|
+| `fun setMedia(media: Media, ref: T, positionMs: Long = 0)` | Shares a title, with `ref` for your own file of it. |
+| `fun clearMedia()` | Stops the media. |
+| `fun setControl(mode: Control)` | Sets who may play, pause, seek and set the rate. |
+| `fun transferHost(peerId: String)` | Makes another participant the host. |
+| `fun kick(peerId: String)` | Removes a participant from the room. |
+| `fun lock(locked: Boolean)` | Refuses or allows new joins. |
+| `fun end()` | Ends the room for everyone. |
+
+The SDK copies what the app passes in, and it publishes read-only collections.
+
+### Party state
+
+`state` holds a `PartyState`. It changes on events, never on every tick.
+
+| `PartyState<T>` field | What it holds |
+|---|---|
+| `connection` | The session status. |
+| `peerId` | Your own peer ID. |
+| `room` | The last snapshot of the room. |
+| `media` | The current descriptor. |
+| `match` | How the room's media matched the user's files. |
+| `choice` | The file to open. |
+| `mismatch` | The file offered while the user decides. |
+| `candidates` | The ranked files. |
+| `offsetMs` | Your local offset. |
+| `player` | The player state reported to the room. |
+| `endReason` | Why the party ended. |
+| `me` | Your own entry among the participants. |
+| `isHost` | Whether you are the host. |
+| `canControl` | Whether you may control playback. |
+
+Enum values are upper-case, such as `Phase.PLAYING` and `EndReason.LOST`.
+
+### Events
+
+`events` carries what happens in the room. Everything else is state.
+
+| `PartyEvent` | When it comes |
+|---|---|
+| `Action` | A room change carried an action, such as someone pressing play. |
+| `ParticipantJoined` | Someone joined the room. |
+| `ParticipantLeft` | Someone left the room. |
+| `Error` | The relay refused a command. |
+| `ResolveFailed` | The resolver failed. |
+| `PlayBlocked` | The player refused to start. |
+| `Ended` | The party ended. |
+
+`PartyEvent` is non-sealed and may grow in 1.x, so give a `when` over events an `else` branch.
+
+### Media descriptors
+
+A `Media` value is a media descriptor: it names a title, and each participant finds their own copy of it. `Media` is `(kind, title, durationMs, year, ids, series, season, episode, file, ext)`.
+
+- `kind` is a `MediaKind`: `MOVIE`, `EPISODE` or `VIDEO`.
+- An episode needs `series`.
+- The keys of `ext` are reverse-DNS names, such as `com.example`.
 
 ## Player and resolver
 
-Implement `PlayerAdapter`: reads `positionMs`, `durationMs` (null when unknown), `paused`, `buffering`, `firstFrameShown`, `canSetRate` (default false) and `seekAccuracyMs` (default 0: how far a seek may land). Add `suspend play()` and `pause()`, returning when done, `seek(positionMs)`, returning once the seek has landed, and `setRate(rate)` (default no-op). `play` throws when the player refuses to start; while it then stays paused, the party reports `loading` and emits `PlayBlocked`, carrying the thrown error, and the app asks the user to press play on the player itself. Without rate control the SDK follows by seeking only. A command must finish or throw. Call `attachPlayer(player, ref)` once per opened file, and again after the party ends (`Ended`); as host, with the `setMedia` ref, in either order. Call `detachPlayer` when the user leaves the player or the app goes to the background, and join it or `close()` before disposing the player. While the user is away, the quick start's `openChoice()` must not open or attach, since `attachPlayer` brings them back. Give it a flag it checks before it opens and before it attaches. When the user leaves, set the flag and join `party.detachPlayer()`; on return, clear it, set `attached = null` and call `openChoice()`. The `Mutex` keeps that call from running alongside the `state` collector's. Call `playerChanged()` between ticks.
+Your app gives the party two pieces of its own: a player adapter for your player, and a resolver for your library.
 
-`Resolver<T>` is a fun interface, `suspend fun resolve(media: Media): List<Candidate<T>>`, best first and cancelled when the room's media changes; a throw, its own cancellation such as its own timeout included, or over 30 s counts as none and emits `ResolveFailed`. `Candidate<T>` is `(id, ref, durationMs?, sizeBytes?, oshash?, name?, probe?)`, where `probe` opens the file to learn its duration; a probe that throws, its own cancellation included, counts as returning nothing. Identity is the resolver's job: the SDK ranks and drops none. Descriptor strings from others are untrusted input. Helpers: `formatCode(code)` gives `K7M-Q2X`, `sameTitle(a, b)` compares descriptors, `checkMedia(media)` returns the first broken send rule or null, and `parseMedia(json)` decodes with the receive checks.
+### The player adapter
+
+Implement `PlayerAdapter`, as the quick start does. A command must finish or throw.
+
+| Member | What it is |
+|---|---|
+| `positionMs` | The current position in your own file. |
+| `durationMs` | The file's duration, or null when unknown. |
+| `paused` | Whether the player is paused. |
+| `buffering` | Whether the player stalled while trying to play. |
+| `firstFrameShown` | Whether the file is open and shows a frame. |
+| `canSetRate` | Whether `setRate` works. Defaults to false. |
+| `seekAccuracyMs` | How far from the target a seek may land, such as your player's keyframe distance. Defaults to 0. |
+| `suspend play()` | Starts playing, and returns when done. |
+| `pause()` | Pauses, and returns when done. |
+| `seek(positionMs)` | Seeks, and returns once the seek has landed. |
+| `setRate(rate)` | Changes the speed. Does nothing by default. |
+
+Without rate control, the SDK keeps your player in step with seeks alone.
+
+When the player refuses to start, `play` throws. While the player then stays paused, the party reports `loading` and emits `PlayBlocked`, carrying the thrown error. Your app then asks the user to press play on the player itself.
+
+### Attaching and detaching
+
+Call `attachPlayer(player, ref)` each time you open a file. Call it again after the party ends with `Ended`, because the end releases the player. As host, attach with the `setMedia` ref, before or after `setMedia`.
+
+Call `detachPlayer` when the user leaves the player or the app goes to the background. Join the `Job` it returns, or the one `close()` returns, before you dispose of the player.
+
+When your player's state changes between ticks, call `playerChanged()` so the SDK reads it at once.
+
+While the user is away, the quick start's `openChoice()` must not open a file or attach the player, because `attachPlayer` would bring the user back. Add a flag that it checks before it opens a file and again before it attaches. Then handle the user leaving and returning:
+
+1. When the user leaves, set the flag and join `party.detachPlayer()`.
+2. When the user returns, clear the flag, set `attached = null` and call `openChoice()`.
+
+The `Mutex` keeps that call from running alongside the `state` collector's.
+
+### The resolver
+
+The resolver finds the user's own copy of the room's title. `Resolver<T>` is a fun interface, `suspend fun resolve(media: Media): List<Candidate<T>>`, which returns candidates best first. The SDK cancels it when the room's media changes.
+
+A resolver call counts as finding no candidates, and emits `ResolveFailed`, in three cases:
+
+- It throws.
+- It is cancelled by its own cancellation, such as its own timeout.
+- It runs for over 30 seconds.
+
+`Candidate<T>` is `(id, ref, durationMs?, sizeBytes?, oshash?, name?, probe?)`. Its `probe` opens the file to learn its duration. A probe that throws counts as returning nothing, and so does a probe cancelled by its own cancellation.
+
+- Deciding which files are the same title is the resolver's job. The SDK ranks the candidates and never drops one.
+- Descriptor strings from others are untrusted input.
+
+### Helpers
+
+| Helper | What it does |
+|---|---|
+| `formatCode(code)` | Formats a room code for display, such as `K7M-Q2X`. |
+| `sameTitle(a, b)` | Tells whether two descriptors name the same title. |
+| `checkMedia(media)` | Checks a descriptor before you send it, and returns the first broken rule or null. |
+| `parseMedia(json)` | Decodes a descriptor with the checks a receiver makes. |
 
 ## Threading
 
-The party runs in a child `SupervisorJob` of the given `scope` on its dispatcher. It calls the adapter and resolver there, so use a single-threaded scope (on Android, a Main scope) and call the party from that thread. A scope with no dispatcher gets `Dispatchers.Default`. Non-suspend methods run on the caller's thread. Cancelling the caller of `create`/`join` cancels the attempt, and the caller gets its own `CancellationException`. `close()` cancels only the party's own child scope. Timers are coroutines on that scope, so a test dispatcher drives them.
+The party runs in a child `SupervisorJob` of the given `scope`, on that scope's dispatcher. A scope with no dispatcher gets `Dispatchers.Default`. The party calls the adapter and resolver there, so use a single-threaded scope, such as a Main scope on Android, and call the party from that thread.
+
+- Non-suspend methods run on the caller's thread.
+- Cancelling the caller of `create` or `join` cancels the attempt, and the caller gets its own `CancellationException`.
+- `close()` cancels only the party's own child scope.
+- Timers are coroutines on that scope, so a test dispatcher drives them.
+
+`state` is a `StateFlow<PartyState<T>>`, and `events` is a `SharedFlow<PartyEvent>`. Subscribe to `events` before `create` or `join`. It has no replay, though it drops nothing while you are subscribed.
 
 ## Errors
 
-`PartyException` carries a `code` (with constants on its companion), a log-only `message` and `re`, the refused message type; show your own text per `code` with a generic fallback. Refusals of sent commands arrive as `PartyEvent.Error`, not exceptions.
+The SDK reports failures as a `PartyException`. Show the user your own text for each `code`, with a generic fallback, because `message` is meant for logs only.
+
+| Field | What it holds |
+|---|---|
+| `code` | The error code. The companion object has constants for the codes. |
+| `message` | Text for logs only. |
+| `re` | The type of the refused message. |
+
+The relay's refusals of sent commands arrive as `PartyEvent.Error`, not as exceptions. The table shows what raises each code.
 
 | Error code | Raised by |
 |---|---|
-| `invalid_code` | `join`, `formatCode` with a non-code |
-| `unreachable` | `create`/`join` when no relay answers within 10 s; `Ended.error` for `LOST` after the resume window |
-| `cancelled` | `create`/`join` after `leave()`/`close()` |
-| `already_in_room` | `create`/`join` while connecting or in a room |
-| `not_in_room` | commands outside a room |
-| `forbidden` | host-only commands as non-host; playback commands without control |
-| `invalid_message` | invalid constructor names, a `Relays.at` base that isn't an http(s) URL with a host, arguments out of range, a malformed `joined`, a bad descriptor in `parseMedia`, no media, unknown peer |
-| relay codes (`room_not_found`, `relay_full`, `resume_failed`, `client_blocked`, …) | passed through from the relay; `room_not_found` is also raised by `join` when no relay owns the code |
+| `invalid_code` | `join`, and `formatCode` with a non-code. |
+| `unreachable` | `create` and `join` when no relay answers within 10 seconds, and `Ended.error` for `LOST` after the resume window. |
+| `cancelled` | `create` and `join` after `leave()` or `close()`. |
+| `already_in_room` | `create` and `join` while connecting or in a room. |
+| `not_in_room` | Commands outside a room. |
+| `forbidden` | Host-only commands from a non-host, and playback commands without control. |
+| `invalid_message` | Bad arguments and bad input, listed below. |
+
+`invalid_message` covers these cases:
+
+- The constructor got an invalid `client` or `name`.
+- A `Relays.at` base isn't an HTTP or HTTPS URL with a host.
+- An argument is out of range.
+- A `joined` is malformed.
+- `parseMedia` got a bad descriptor.
+- A command needs media, and there is none.
+- A command names an unknown peer.
+
+Other codes are the relay's own, such as `room_not_found`, `relay_full`, `resume_failed` and `client_blocked`, and they pass through as they are. `join` also raises `room_not_found` when no relay owns the code.
 
 ## Build and test
 
-From `sdk/kotlin` in a checkout (Gradle 9.8.0 needs a JVM from 17 to 27; CI uses Temurin 21):
+Run these commands from `sdk/kotlin` in a checkout. Gradle 9.8.0 needs a JVM from 17 to 27, and CI uses Temurin 21.
 
 ```
 ./gradlew --console=plain assemble check
@@ -237,9 +456,12 @@ From `sdk/kotlin` in a checkout (Gradle 9.8.0 needs a JVM from 17 to 27; CI uses
 
 | Suite | Source set | Runs on | Needs |
 |---|---|---|---|
-| Unit (`PartyTest`, `RelayListTest`, `VectorTest`, `WireTest`, `TimersTest`) | `src/commonTest` | every test task: `jvmTest`, `testAndroidHostTest`, `macosArm64Test`, `iosSimulatorArm64Test`, `tvosSimulatorArm64Test` | `generateTestData` (automatic) |
-| Integration (`IntegrationTest`) | `src/jvmTest` | `jvmTest` only | Go; relay on 127.0.0.1 ports 18300–18349 |
+| Unit: `PartyTest`, `RelayListTest`, `VectorTest`, `WireTest`, `TimersTest` | `src/commonTest` | Every test task: `jvmTest`, `testAndroidHostTest`, `macosArm64Test`, `iosSimulatorArm64Test`, `tvosSimulatorArm64Test` | `generateTestData`, which runs automatically |
+| Integration: `IntegrationTest` | `src/jvmTest` | `jvmTest` only | Go, and a relay on 127.0.0.1 ports 18300–18349 |
 
 ## Links
 
-[`spec/SPEC.md`](../../spec/SPEC.md) is the wire protocol; [`docs/integration.md`](../../docs/integration.md) is the end-to-end guide; the [TypeScript](../typescript/README.md), [Dart](../dart/README.md) and [Swift](../swift/README.md) SDKs cover other platforms; Ktor engine support is at <https://ktor.io/docs/client-engines.html>.
+- [`docs/integration.md`](../../docs/integration.md) is the end-to-end integration guide.
+- [`spec/SPEC.md`](../../spec/SPEC.md) is the wire protocol.
+- The [TypeScript](../typescript/README.md), [Dart](../dart/README.md) and [Swift](../swift/README.md) SDKs cover other platforms.
+- Ktor engine support is at <https://ktor.io/docs/client-engines.html>.

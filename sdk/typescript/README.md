@@ -1,6 +1,8 @@
 # TypeScript SDK
 
-`openwatchparty` keeps players in different apps in sync in one room, implementing the behaviour in [`spec/SDK.md`](../../spec/SDK.md); read that for the rules this page only names.
+`openwatchparty` keeps players in different apps in sync in one room. Each person in the room plays their own copy of the title, and a relay keeps the copies together.
+
+The SDK implements the client behaviour in [`spec/SDK.md`](../../spec/SDK.md). This page names the rules the SDK follows, and SDK.md explains them in full.
 
 ## Install
 
@@ -10,6 +12,8 @@ npm install openwatchparty
 
 ## Requirements
 
+The package runs in Node and in browsers from these versions on:
+
 | Runtime | Minimum |
 |---|---|
 | Node | 22 |
@@ -17,9 +21,11 @@ npm install openwatchparty
 | Firefox | 121 |
 | Safari | 17.4 |
 
-The package is ESM only (no `require` condition) and has no runtime dependencies. TypeScript consumers need the `dom` lib, or `skipLibCheck`. A global `WebSocket` must exist even when you pass a custom `connect`.
+The package is ESM only, with no `require` condition, and it has no runtime dependencies. TypeScript consumers need the `dom` lib, or `skipLibCheck`. A global `WebSocket` must exist, even when you pass a custom `connect`.
 
 ## Quick start
+
+This example runs in a browser page with a `<video>` element. It joins the room named in the page's `room` query parameter. Without one, it creates a room and shares the video as host. Whenever the SDK chooses a file, the example loads it into the `<video>` and attaches the element with `attachVideo`.
 
 ```ts
 import { Relays, WatchParty, attachVideo, formatCode, type Resolver } from "openwatchparty";
@@ -92,96 +98,269 @@ if (code !== null) {
 }
 ```
 
-[`examples/web`](../../examples/web/README.md) is a full browser page on `attachVideo`.
+[`examples/web`](../../examples/web/README.md) is a full browser page built on `attachVideo`.
 
 ## Relays
 
-`Relays.public()` starts from the copy of [`relays.json`](../../relays.json) compiled into the SDK, and each valid list a refresh reads from `https://openwatch.party/relays.json` replaces it in memory. `Relays.at(baseUrl)` is one [self-hosted relay](../../relay/README.md) for every room: its `list` is that relay alone, it fetches nothing, and a bad base (not a lower-case `https://` or `http://` URL with a host, such as `https://relay.example.com`) throws a `PartyError` with code `invalid_message`.
+A `Relays` object tells your parties which relays exist and which one owns a room code. Create one for the whole app and pass it to every party, as the quick start does.
 
-```ts
-static public(options?: RelaysOptions): Relays;
-static at(baseUrl: string): Relays;
-get list(): readonly Relay[];
-relayFor(code: string): Relay | null;
-refresh(): Promise<boolean>;
-```
+There are two kinds of list:
 
-`RelaysOptions` has one member, `httpGet: (url: string, signal: AbortSignal) => Promise<string>`, by default `fetch` with `redirect: "error"`. A custom `httpGet` must stop when `signal` aborts, follow no redirects, and fail on a non-200 status. `refresh()` resolves `false` when no valid list came back, and the list in use stays; on a `Relays.at` it does nothing and resolves `true`.
+- `Relays.public()` uses the public relays. It starts from the copy of [`relays.json`](../../relays.json) compiled into the SDK. Each valid list a refresh reads from `https://openwatch.party/relays.json` replaces it in memory.
+- `Relays.at(baseUrl)` uses one [self-hosted relay](../../relay/README.md) for every room. Its `list` is that relay alone, and it fetches nothing.
+
+`Relays.at` needs a lower-case `https://` or `http://` URL with a host, such as `https://relay.example.com`. Any other base throws a `PartyError` with the code `invalid_message`.
+
+| Member | What it does |
+|---|---|
+| `static public(options?: RelaysOptions): Relays` | Creates a list of the public relays. |
+| `static at(baseUrl: string): Relays` | Creates a list of one self-hosted relay. |
+| `list: readonly Relay[]` | The relays in use. |
+| `relayFor(code: string): Relay \| null` | Finds the relay that owns a room code. |
+| `refresh(): Promise<boolean>` | Fetches the public list now, and resolves with whether a valid list came back. |
+
+`refresh()` resolves `false` when no valid list came back, and the list in use stays. On a `Relays.at` list, it does nothing and resolves `true`.
+
+`RelaysOptions` has one member, `httpGet: (url: string, signal: AbortSignal) => Promise<string>`. By default it is `fetch` with `redirect: "error"`. A custom `httpGet` must follow these rules:
+
+- It stops when `signal` aborts.
+- It follows no redirects.
+- It fails on a non-200 status.
 
 ## WatchParty
 
-| Option | Type | Default |
+A `WatchParty` is one participant's session. It connects to a relay, keeps the room's state, matches the room's media to the user's own files and drives your player.
+
+### Creating a party
+
+The constructor, `new WatchParty<T>`, takes a `WatchPartyOptions<T>` object with these options. `T` is the type of your app's file `ref`, the value your app uses to open a file.
+
+| Option | Type | What it is |
 |---|---|---|
-| `relays` | `Relays` | required |
-| `client` | `string`, `<app>/<version>`, e.g. `Example/1.0` | required |
-| `name` | `string`, 1–32 characters | required |
-| `resolver` | `Resolver<T>` | none (others' media then has no candidates; `match` is `unavailable`) |
-| `connect` | `(url: string) => WebSocket` | `new WebSocket(url)` |
-| `nowMs` | `() => number` | `performance.now()` |
-| `random` | `() => number` in [0, 1) | `Math.random` |
+| `relays` | `Relays` | The app's relay list. Required. |
+| `client` | `string` | Your app and its version, as `<app>/<version>`, such as `Example/1.0`. Required. |
+| `name` | `string` | The user's display name, 1–32 characters. Required. |
+| `resolver` | `Resolver<T>` | Your search for the user's own files. There is none by default. |
+| `connect` | `(url: string) => WebSocket` | Opens a socket. Defaults to `new WebSocket(url)`. |
+| `nowMs` | `() => number` | The monotonic local clock. Defaults to `performance.now()`. |
+| `random` | `() => number` in [0, 1) | Draws random numbers. Defaults to `Math.random`. |
 
-The constructor throws a `PartyError` with code `invalid_message` for a bad `client` or `name`. A custom `connect` must return a socket behaving like a browser `WebSocket` (`onopen`/`onmessage`/`onclose`/`onerror`, `readyState`, `send(string)`, `close(code)`).
+The constructor throws a `PartyError` with the code `invalid_message` for a bad `client` or `name`. Without a resolver, other participants' media has no candidates, so `match` is `unavailable`.
 
-```ts
-constructor(options: WatchPartyOptions<T>);
-get state(): PartyState<T>;
-on(type: "state", listener: (state: PartyState<T>) => void): () => void;
-on(type: "event", listener: (event: PartyEvent) => void): () => void;
-create(): Promise<string>;
-join(code: string): Promise<void>;
-leave(): void;
-close(): Promise<void>;
-attachPlayer(player: PlayerAdapter, ref: T): void;
-detachPlayer(player?: PlayerAdapter): Promise<void>;
-playerChanged(): void;
-acceptMismatch(): void;
-declineMismatch(): void;
-choose(candidate: Candidate<T>): Promise<boolean>;
-resolveAgain(): void;
-play(): void;
-pause(): void;
-seek(positionMs: number): void;
-setRate(rate: number): void;
-setOffset(offsetMs: number): void;
-setMedia(media: Media, ref: T, positionMs?: number): void;
-clearMedia(): void;
-setControl(mode: Control): void;
-transferHost(peerId: string): void;
-kick(peerId: string): void;
-lock(locked: boolean): void;
-end(): void;
-roomPositionMs(): number | null;
-```
+A custom `connect` must return a socket that behaves like a browser `WebSocket`. The SDK uses its `onopen`, `onmessage`, `onclose` and `onerror` handlers, its `readyState`, `send(string)` and `close(code)`.
 
-`join(code)` accepts a code as typed or pasted. `setMedia`, `clearMedia`, `setControl`, `transferHost`, `kick`, `lock` and `end` are host-only. `seek` takes a position in the app's own file. `setRate` takes 0.5 to 2.0. `setOffset` takes an integer within ±604800000 ms. `leave()` during `create`/`join` cancels the attempt. After `close()` the party can't be used again. An ended party may `create` or `join` again.
+### State and session
 
-`party.state` is a new frozen `PartyState` object on every change, and `on("state", …)` / `on("event", …)` return an unsubscribe function and replay nothing.
-
-| `PartyState<T>` field | Meaning |
+| Member | What it does |
 |---|---|
-| `connection`, `peerId`, `endReason` | session status, own ID, why it ended |
-| `room`, `media` | last snapshot, current descriptor |
-| `match`, `choice`, `mismatch`, `candidates` | match, file to open, file offered, ranked files |
-| `offsetMs`, `player` | local offset, reported player state |
-| `me`, `isHost`, `canControl` | own participant, host, may control playback |
+| `state: PartyState<T>` | Everything the UI shows, as one value. |
+| `on("state", listener)` | Calls `listener` with every new state, and returns a function that unsubscribes. |
+| `on("event", listener)` | Calls `listener` with every event, and returns a function that unsubscribes. |
+| `create(): Promise<string>` | Creates a room, joins it as host and resolves with the room code. |
+| `join(code: string): Promise<void>` | Joins a room by its code, as the user typed or pasted it. |
+| `leave(): void` | Leaves the room. |
+| `close(): Promise<void>` | Leaves the room and releases everything. |
+| `roomPositionMs(): number \| null` | The room's position now. |
 
-Events by `type`: `action` (`kind`, `byPeerId`, `by`, `byMe`, `room`), `participantJoined` and `participantLeft` (`participant`), and `error` (`error: PartyError`). `resolveFailed` carries what the resolver threw, or a `DOMException` named `TimeoutError` after 30 s; `playBlocked` carries what the adapter's `play` threw when the player refused to start, such as a browser blocking autoplay, and the app then asks the user to press play on the player itself; `ended` carries `reason` and `error`. A later 1.x may add types, so ignore unknown ones. `Media` holds `kind`, `title`, `durationMs` and optional `year`, `ids`, `series`, `season`, `episode`, `file` and `ext` (keyed by a reverse-DNS name such as `com.example`).
+`leave()` during `create` or `join` cancels the attempt. An ended party may `create` or `join` again, but after `close()` the party can't be used again.
+
+### Matching and the player
+
+| Member | What it does |
+|---|---|
+| `acceptMismatch(): void` | Plays the offered file, though its duration differs. |
+| `declineMismatch(): void` | Declines the offered file. |
+| `choose(candidate: Candidate<T>): Promise<boolean>` | Takes a file the user picked by hand. |
+| `resolveAgain(): void` | Searches again for the current media. |
+| `attachPlayer(player: PlayerAdapter, ref: T): void` | Lets the SDK drive your player, which has the file of `ref` open. |
+| `detachPlayer(player?: PlayerAdapter): Promise<void>` | Stops driving the player when the user leaves it. |
+| `playerChanged(): void` | Tells the SDK the player's state changed, so it reads it now. |
+
+`choose` resolves `false` when it can't take the file, including when the room has no media. [Player and resolver](#player-and-resolver) explains how to use the player members.
+
+### Playback
+
+These commands act on the whole room. Send the user's presses through them, not straight to the player.
+
+| Member | What it does |
+|---|---|
+| `play(): void` | Asks the room to play. |
+| `pause(): void` | Pauses the room. |
+| `seek(positionMs: number): void` | Moves the room to a position in the app's own file. |
+| `setRate(rate: number): void` | Sets the room's rate, from 0.5 to 2.0. |
+| `setOffset(offsetMs: number): void` | Sets your local offset from the room's position. |
+
+The offset you set with `setOffset` applies only to your own player. It is an integer of at most 604800000 ms, or 7 days, either way.
+
+### Host controls
+
+Only the host may use these.
+
+| Member | What it does |
+|---|---|
+| `setMedia(media: Media, ref: T, positionMs?: number): void` | Shares a title, with `ref` for your own file of it. |
+| `clearMedia(): void` | Stops the media. |
+| `setControl(mode: Control): void` | Sets who may play, pause, seek and set the rate. |
+| `transferHost(peerId: string): void` | Makes another participant the host. |
+| `kick(peerId: string): void` | Removes a participant from the room. |
+| `lock(locked: boolean): void` | Refuses or allows new joins. |
+| `end(): void` | Ends the room for everyone. |
+
+### Party state
+
+`party.state` is a new frozen `PartyState` object on every change.
+
+| `PartyState<T>` field | What it holds |
+|---|---|
+| `connection` | The session status. |
+| `peerId` | Your own peer ID. |
+| `room` | The last snapshot of the room. |
+| `media` | The current descriptor. |
+| `match` | How the room's media matched the user's files. |
+| `choice` | The file to open. |
+| `mismatch` | The file offered while the user decides. |
+| `candidates` | The ranked files. |
+| `offsetMs` | Your local offset. |
+| `player` | The player state reported to the room. |
+| `endReason` | Why the party ended. |
+| `me` | Your own entry among the participants. |
+| `isHost` | Whether you are the host. |
+| `canControl` | Whether you may control playback. |
+
+### Events
+
+Events tell you what happens in the party. Each has a `type`:
+
+| `type` | Carries | When it comes |
+|---|---|---|
+| `action` | `kind`, `byPeerId`, `by`, `byMe`, `room` | A room change carried an action, such as someone pressing play. |
+| `participantJoined` | `participant` | Someone joined the room. |
+| `participantLeft` | `participant` | Someone left the room. |
+| `error` | `error: PartyError` | The relay refused a command. |
+| `resolveFailed` | `error` | The resolver failed. |
+| `playBlocked` | `error` | The player refused to start. |
+| `ended` | `reason`, `error` | The party ended. |
+
+A `resolveFailed` event carries what the resolver threw. After 30 seconds without an answer, it carries a `DOMException` named `TimeoutError` instead.
+
+A later 1.x may add types, so ignore the ones you don't know.
+
+### Media descriptors
+
+A `Media` value is a media descriptor: it names a title, and each participant finds their own copy of it. It holds `kind`, `title` and `durationMs`. It can also hold `year`, `ids`, `series`, `season`, `episode`, `file` and `ext`. The keys of `ext` are reverse-DNS names, such as `com.example`.
 
 ## Player and resolver
 
-For `<video>`/`<audio>`, `attachVideo(party, video, ref)` wraps the element in an adapter, calls `party.attachPlayer(adapter, ref)` with the `ref` of the file the element has open, and routes the element's own controls to the party, telling the user's presses from the SDK's commands. A rate the SDK set on the element is never sent back to the room. While the user drags the seek bar, it sends at most one `seek` per 250 ms with the latest position, so the position where the drag stops goes out within 250 ms. Call it once per file, once the element has the file open. It returns a cleanup `() => Promise<void>` that removes its listeners and calls `party.detachPlayer(adapter)`, so it never detaches a newer player, and returns that completion: await it before disposing the element (after `close()` it resolves at once). `videoAdapter(video)` is the adapter alone, with no control routing, for pages the app doesn't own, such as a browser extension's. Both throw from `play` when the element refuses to start.
+Your app gives the party two pieces of its own: a player adapter for your player, and a resolver for your library.
 
-Otherwise implement `PlayerAdapter`: cheap synchronous reads `positionMs`, `durationMs` (or `null`), `paused`, `buffering` and `firstFrameShown`. Add `play()`, `pause()` and `seek(positionMs)`, resolving when each lands; a command must finish or throw, and `play()` throws when the player refuses to start, so the party reports `loading`. Optional: `setRate(rate)` (without it the SDK only seeks) and `seekAccuracyMs`. Call `attachPlayer(player, ref)` once per opened file, and again after the party ends (`ended`); as host, `setMedia` and attaching may come in either order, and a `setMedia` lost on a dropped connection is sent again after the resume while the party is still host. Call `detachPlayer` when the user leaves the player or the app goes to the background, and await it or `close()` before disposing a player. While the user is away, the quick start's `openChoice()` must not load or attach, since attaching brings them back. Give it a flag it checks before it loads and before it attaches. When the user leaves, set the flag and await `detach?.()`; on return, clear it, set `detach = attached = null` and call `openChoice()`. Call `playerChanged()` between ticks.
+### Video and audio elements
 
-`Resolver<T>` is `resolve(media, signal)` returning `Candidate<T>[]` best first; a candidate is `{ id, ref, durationMs?, sizeBytes?, oshash?, name?, probe? }`, and `probe(signal)` opens the file to learn its duration. Identity is the resolver's job for every kind: the SDK ranks candidates and drops none. Treat descriptor values as untrusted search terms, never a path, URL, host or query fragment. Helpers: `formatCode`, `sameTitle`, `checkMedia` (first broken send rule or `null`) and `parseMedia` (receive checks).
+For a `<video>` or `<audio>` element, use `attachVideo(party, video, ref)` instead of writing an adapter. Call it once per file, once the element has the file open. It does three things:
+
+1. It wraps the element in an adapter.
+2. It calls `party.attachPlayer(adapter, ref)`, with the `ref` of the file the element has open.
+3. It routes the element's own controls to the party, and tells the user's presses apart from the SDK's commands.
+
+A rate the SDK set on the element is never sent back to the room. While the user drags the seek bar, `attachVideo` sends at most one `seek` per 250 milliseconds, with the latest position. The position where the drag stops goes out within 250 milliseconds.
+
+`attachVideo` returns a cleanup function, `() => Promise<void>`. The cleanup removes the listeners and calls `party.detachPlayer(adapter)`, so it never detaches a newer player. It returns that call's completion: await it before you dispose of the element. After `close()`, it resolves at once.
+
+`videoAdapter(video)` is the adapter alone, with no control routing. Use it on pages your app doesn't own, such as a browser extension's. The adapters of both functions throw from `play` when the element refuses to start.
+
+### The player adapter
+
+For any other player, implement `PlayerAdapter`. Its reads must be cheap and synchronous.
+
+| Member | What it is |
+|---|---|
+| `positionMs` | The current position in your own file. |
+| `durationMs` | The file's duration, or `null` when unknown. |
+| `paused` | Whether the player is paused. |
+| `buffering` | Whether the player stalled while trying to play. |
+| `firstFrameShown` | Whether the file is open and shows a frame. |
+| `play()` | Starts playing, and resolves once the player plays. |
+| `pause()` | Pauses, and resolves once the player has paused. |
+| `seek(positionMs)` | Seeks, and resolves once the seek has landed. |
+| `setRate(rate)` | Optional. Changes the speed. |
+| `seekAccuracyMs` | Optional. How far from the target a seek may land, such as your player's keyframe distance. |
+
+A command must finish or throw. Without `setRate`, the SDK keeps your player in step with seeks alone.
+
+When the player refuses to start, `play` throws. The common case is a browser blocking autoplay. The party then reports `loading` and emits a `playBlocked` event carrying what `play` threw. Your app then asks the user to press play on the player itself.
+
+### Attaching and detaching
+
+Call `attachPlayer(player, ref)` each time you open a file. Call it again after the party ends with an `ended` event, because the end releases the player.
+
+As host, you can call `setMedia` and attach in either order. If a `setMedia` is lost to a dropped connection, the SDK sends it again after the resume, as long as the party is still host.
+
+Call `detachPlayer` when the user leaves the player or the app goes to the background. Await it, or `close()`, before you dispose of a player.
+
+When your player's state changes between ticks, call `playerChanged()` so the SDK reads it at once.
+
+While the user is away, the quick start's `openChoice()` must not load a file or attach the element, because attaching would bring the user back. Add a flag that it checks before it loads a file and again before it attaches:
+
+```ts
+let away = false;
+
+async function leavePlayer(): Promise<void> {
+  away = true;
+  await detach?.();
+}
+
+function returnToPlayer(): void {
+  away = false;
+  detach = attached = null;
+  void openChoice();
+}
+```
+
+### The resolver
+
+The resolver finds the user's own copy of the room's title. A `Resolver<T>` has one method, `resolve(media, signal)`, which returns `Candidate<T>[]` best first.
+
+A candidate is `{ id, ref, durationMs?, sizeBytes?, oshash?, name?, probe? }`. Its `probe(signal)` opens the file to learn its duration.
+
+- Deciding which files are the same title is the resolver's job, for every kind of media. The SDK ranks the candidates and never drops one.
+- Treat every value in the descriptor as an untrusted search term. Never use one as a path, URL, host or query fragment.
+
+### Helpers
+
+| Helper | What it does |
+|---|---|
+| `formatCode` | Formats a room code for display, such as `K7M-Q2X`. |
+| `sameTitle` | Tells whether two descriptors name the same title. |
+| `checkMedia` | Checks a descriptor before you send it, and returns the first broken rule or `null`. |
+| `parseMedia` | Decodes a descriptor and applies the checks a receiver makes. |
+
+## Threading
+
+Listeners run synchronously. `on("state", …)` and `on("event", …)` replay nothing, so a listener gets only what happens after it subscribes.
 
 ## Errors
 
-`PartyError` carries `code` (relay codes pass through; the SDK adds `invalid_code`, `unreachable`, `cancelled`) and `re`, the refused message type; `message` is for logs, so show your own text per `code`. `create`/`join` reject, commands throw synchronously, refusals arrive as `error` events, and session loss as `ended`. No answer within 10 s is `unreachable`. `invalid_message` also covers a bad `Relays.at` base, a malformed `joined` and bad `parseMedia` input. `choose` resolves `false` when it can't take the file, including without media. Listeners run synchronously.
+The SDK reports failures as a `PartyError`. Show the user your own text for each `code`, because `message` is meant for logs only.
+
+| Field | What it holds |
+|---|---|
+| `code` | The error code. |
+| `message` | Text for logs only. |
+| `re` | The type of the refused message. |
+
+The relay's error codes pass through as they are. The SDK adds three of its own: `invalid_code`, `unreachable` and `cancelled`.
+
+Errors reach your app in different ways:
+
+- `create` and `join` reject with a `PartyError`.
+- Commands throw it synchronously.
+- The relay's refusals of commands arrive as `error` events.
+- The loss of the session arrives as an `ended` event.
+
+When no answer comes within 10 seconds, the call fails with `unreachable`. The code `invalid_message` also covers a bad `Relays.at` base, a malformed `joined` and bad `parseMedia` input.
 
 ## Build and test
 
-From `sdk/typescript` in a checkout:
+Run these commands from `sdk/typescript` in a checkout:
 
 ```sh
 npm ci
@@ -192,4 +371,11 @@ npm test
 npm run build
 ```
 
-`test:unit` (unit, [vector](../../conformance/vectors/README.md) and embedded-list tests) needs no Go; `test:integration` and `npm test` build `owp-relay` from `relay/` with Go 1.26. See also [`docs/integration.md`](../../docs/integration.md), [`spec/SPEC.md`](../../spec/SPEC.md), [`conformance/peer`](../../conformance/peer/README.md) and the [Dart](../dart/README.md), [Kotlin](../kotlin/README.md) and [Swift](../swift/README.md) SDKs.
+`test:unit` runs the unit, [vector](../../conformance/vectors/README.md) and embedded-list tests, and needs no Go. `test:integration` and `npm test` build `owp-relay` from `relay/` with Go 1.26.
+
+## Links
+
+- [`docs/integration.md`](../../docs/integration.md) is the end-to-end integration guide.
+- [`spec/SPEC.md`](../../spec/SPEC.md) is the wire protocol.
+- [`conformance/peer`](../../conformance/peer/README.md) is a scripted participant on this SDK, so an app under test has someone else in the room.
+- The [Dart](../dart/README.md), [Kotlin](../kotlin/README.md) and [Swift](../swift/README.md) SDKs cover other platforms.
