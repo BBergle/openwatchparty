@@ -1,10 +1,18 @@
 # Conformance vectors
 
-These eleven JSON tables pin the deterministic parts of [SDK.md](../../spec/SDK.md): same input, same result in every SDK, and every SDK runs every table. A Go reference in `tools/` generates them (`ref.go` and `check.go` hold the rules, `cases.go` the cases, `cases_party*.go` the traces of `party.json`). Rules a table cannot express are in each SDK's tests (SDK.md §17).
+These eleven JSON tables pin the deterministic parts of [SDK.md](../../spec/SDK.md). The same input gives the same result in every SDK, and every SDK runs every table. Rules a table cannot express are covered by each SDK's own tests (SDK.md §17).
+
+Read this guide when you change a client rule, add a case or a table, or write the runner for an SDK.
+
+A Go reference in `tools/` generates the tables:
+
+- `ref.go` and `check.go` hold the rules.
+- `cases.go` holds the cases.
+- `cases_party*.go` hold the traces of `party.json`.
 
 ## Generating and checking
 
-In `conformance/vectors/tools` (Go 1.26):
+In `conformance/vectors/tools`, with Go 1.26:
 
 ```
 go run .            # rewrite every table
@@ -12,7 +20,9 @@ go run . -check     # exit 1 if any table differs from the generator's output
 go test ./...       # boundary tests of the reference implementation and the trace checks
 ```
 
-`-dir <path>` names the vectors directory (default `..`). `-check` reports, sorted, under the header ``vectors are stale (run `go run .` in conformance/vectors/tools):``:
+`-dir <path>` names the vectors directory, which is `..` by default.
+
+`-check` reports each problem, sorted, under the header ``vectors are stale (run `go run .` in conformance/vectors/tools):``:
 
 ```
   extra.json: not produced by the generator
@@ -20,15 +30,41 @@ go test ./...       # boundary tests of the reference implementation and the tra
   timeline.json: differs from the generator's output
 ```
 
-`ref_test.go` pins hand-worked boundaries; it also rejects duplicate case names, nondeterministic output, invalid JSON and non-printable-ASCII bytes. `party_check_test.go` pins the traces the trace check refuses. CI: format, vet, tests, `-check`.
+The tests guard the generator itself:
+
+- `ref_test.go` pins hand-worked boundaries. It also rejects duplicate case names, nondeterministic output, invalid JSON and bytes that aren't printable ASCII.
+- `party_check_test.go` pins the traces that the trace check refuses.
+
+CI checks the formatting, runs vet and the tests, and runs `-check`.
 
 ## Adding a case or a table
 
-Cases are added in `cases.go` (helpers such as `add(...)`; `value(...)` adds a case both ways); expectations come from `ref.go` and `check.go`, never by hand. The one exception is `party.json`: `cases_party.go` and the `cases_party_<area>.go` files beside it write its outputs by hand from SDK.md and SPEC.md, with each trace's sections in a comment, and `party_check.go` checks their shape, not their values. Rule changes go in those files and SDK.md together — they must agree — then `go run .` and commit the tables. A new table needs `xxxTable()`, a `tables()` entry and a runner per SDK (every SDK fails until then). The generator refuses encoder-dependent or mislabelled size cases and inputs holding U+FDD0.
+Cases and tables start in the generator, and the tables are regenerated from it.
+
+Add cases in `cases.go`, with helpers such as `add(...)`. `value(...)` adds a case both ways. The expectations come from `ref.go` and `check.go`, never by hand.
+
+The one exception is `party.json`. `cases_party.go` and the `cases_party_<area>.go` files beside it write its outputs by hand, from SDK.md and SPEC.md, and each trace names its sections in a comment. `party_check.go` checks the shape of those outputs, not their values.
+
+To change a rule:
+
+1. Change the generator's files and SDK.md together. They must agree.
+2. Run `go run .`.
+3. Commit the tables.
+
+A new table needs an `xxxTable()` function, an entry in `tables()`, and a runner in each SDK. Every SDK fails until it has its runner.
+
+The generator refuses size cases that depend on the encoder or are mislabelled. It also refuses inputs that hold U+FDD0.
 
 ## File format
 
-`{"table": <name>, "cases": [...]}` in that order; `table` is the file name minus `.json`. Cases are `{"name","input","expect"}`, one per line, compact printable-ASCII JSON (non-ASCII as `\uXXXX`, no HTML escaping), names unique per table. Times are integer ms.
+Each file is `{"table": <name>, "cases": [...]}`, in that order. `table` is the file name minus `.json`.
+
+Each case is `{"name","input","expect"}`:
+
+- Each case is on its own line, as compact JSON in printable ASCII.
+- Non-ASCII characters are written as `\uXXXX`, with no HTML escaping.
+- Names are unique within a table.
+- Times are integer ms.
 
 ```json
 {
@@ -40,103 +76,290 @@ Cases are added in `cases.go` (helpers such as `add(...)`; `value(...)` adds a c
 }
 ```
 
-Decode with the platform decoder: inputs hold unpaired surrogate escapes (`"Anna\ud800"`), and expectations are computed on the strings as the SDK platforms hold them. An int may be written with a fraction or exponent — any integral number within ±(2^53−1) counts ([SPEC.md](../../spec/SPEC.md) §2). All `matching`/`same-title` descriptors pass the receive checks, so parse them strictly.
+Decode the tables with the platform's JSON decoder. The inputs hold unpaired surrogate escapes such as `"Anna\ud800"`, and the expectations are computed on the strings as the SDK platforms hold them.
+
+An int may be written with a fraction or an exponent. Any integral number within ±(2^53−1) counts ([SPEC.md](../../spec/SPEC.md) §2).
+
+All `matching` and `same-title` descriptors pass the receive checks, so parse them strictly.
 
 ## Comparing results
 
-Compare whole `expect` objects: member order ignored, but absent ≠ `null` (only in `code-routing` and `relay-list` is an error expect just `{"error":…}`; actions carry only their own members) — Kotlin's runner cannot distinguish those. Round `setRate` rates to 6 decimals first. `same-title` is symmetric; TypeScript/Kotlin/Swift also test swapped. `party.json` compares step by step instead, as its section says.
+Compare whole `expect` objects. Member order doesn't matter, but an absent member is not the same as `null`. For example:
+
+- In `code-routing` and `relay-list`, and in no other table, an error expect is just `{"error":…}`.
+- Actions carry only their own members.
+
+Kotlin's runner can't tell an absent member from `null`.
+
+Round `setRate` rates to 6 decimals before you compare them.
+
+`same-title` is symmetric. The TypeScript, Kotlin and Swift runners also test each case with the descriptors swapped.
+
+`party.json` is compared step by step instead, as [its section](#partyjson-sdkmd-315) says.
 
 ## Runners in the SDKs
 
-| SDK | Runner | Tables | Run |
+Each SDK has one runner for the tables and a driver for `party.json`. A guard test fails on any table the runner doesn't run.
+
+| SDK | Runner | Guard test | Run |
 |---|---|---|---|
-| TypeScript | `sdk/typescript/test/unit/vectors.test.ts` | Every `*.json` in `conformance/vectors/` but `party.json`, which `party-traces.test.ts` runs; `every vector table has a runner` fails on any other | `npm run test:unit` in `sdk/typescript` |
-| Dart | `sdk/dart/test/vectors_test.dart` | Each table it names, read from `../../conformance/vectors/`, and `party.json` through `party_traces_test.dart`; `every table has a runner` fails on any other | `dart test` in `sdk/dart` |
-| Kotlin | `sdk/kotlin/src/commonTest/kotlin/party/openwatch/VectorTest.kt` | Each table it names, from test data generated out of `conformance/vectors/`, and `party.json` through `PartyTraces.kt`; `everyTableRuns` fails on any other | `./gradlew check` in `sdk/kotlin` |
-| Swift | `sdk/swift/Tests/OpenWatchPartyTests/VectorTests.swift` | Each table it names, read from `conformance/vectors/`, but `party.json`, which `PartyTraceTests.swift` runs; `everyTableRuns` fails on any other | `swift test --filter VectorTests --filter PartyTraceTests` at the repository root |
+| TypeScript | `sdk/typescript/test/unit/vectors.test.ts` | `every vector table has a runner` | `npm run test:unit` in `sdk/typescript` |
+| Dart | `sdk/dart/test/vectors_test.dart` | `every table has a runner` | `dart test` in `sdk/dart` |
+| Kotlin | `sdk/kotlin/src/commonTest/kotlin/party/openwatch/VectorTest.kt` | `everyTableRuns` | `./gradlew check` in `sdk/kotlin` |
+| Swift | `sdk/swift/Tests/OpenWatchPartyTests/VectorTests.swift` | `everyTableRuns` | `swift test --filter VectorTests --filter PartyTraceTests` at the repository root |
 
-For `matching`, TypeScript runs a real party on mocked timers, Kotlin runs the walk under `runTest`, Swift runs the walk on a virtual clock, and Dart calls the ranking and walk functions directly.
+The runners find the tables in different ways:
 
-Swift decodes the tables with the SDK's own JSON reader, not the platform decoder: a Swift `String` can't hold an unpaired surrogate, so the reader turns each unpaired surrogate escape into U+FFFD and marks the string, and the checks still see it.
+- TypeScript runs every `*.json` in `conformance/vectors/` except `party.json`, which `party-traces.test.ts` runs.
+- Dart runs each table it names, read from `../../conformance/vectors/`, and `party.json` through `party_traces_test.dart`.
+- Kotlin runs each table it names, from test data generated out of `conformance/vectors/`, and `party.json` through `PartyTraces.kt`.
+- Swift runs each table it names, read from `conformance/vectors/`, except `party.json`, which `PartyTraceTests.swift` runs.
+
+The `matching` table runs differently in each SDK:
+
+- TypeScript runs a real party on mocked timers.
+- Kotlin runs the walk under `runTest`.
+- Swift runs the walk on a virtual clock.
+- Dart calls the ranking and walk functions directly.
+
+Swift decodes the tables with the SDK's own JSON reader, not the platform decoder. A Swift `String` can't hold an unpaired surrogate. The reader therefore turns each unpaired surrogate escape into U+FFFD and marks the string, so the checks still see it.
 
 ## The tables
 
-The constants in play are SDK.md §2's. Each table below gives its input and expect members; the rule itself is the section in its heading.
+Each table below lists its input and expect members. The rule itself is in the SDK.md section in the table's heading, and the constants in play are those of SDK.md §2.
 
 ### `timeline.json` (SDK.md §8)
 
-In: `room{phase,positionMs,atMs,rate}`, `durationMs`, `serverNowMs`. Out: `positionMs`, `running`.
+The input holds `room{phase,positionMs,atMs,rate}`, `durationMs` and `serverNowMs`. The expectation holds `positionMs` and `running`.
 
 ### `clock-sync.json` (SDK.md §5)
 
-In: `events` — `{"ping":id,"atMs":t}` or `{"pong":id,"serverTime":s,"atMs":t}` (local times). Out: `pongs[]`, per pong `result` (`accepted`/`stepped`=window cleared then kept/`ignored`=unknown or round trip outside 0..1000) plus best `offsetMs`/`rttMs` (null if none).
+The input is `events`, a list of `{"ping":id,"atMs":t}` and `{"pong":id,"serverTime":s,"atMs":t}`, with local times.
+
+The expectation is `pongs[]`. Each pong has a `result`, plus the best `offsetMs` and `rttMs` after it, or null if there is none. The `result` is one of these:
+
+- `accepted`: the sample was kept.
+- `stepped`: the window was cleared, then the sample was kept.
+- `ignored`: the pong was unknown, or its round trip was outside 0..1000.
 
 ### `reconcile.json` (SDK.md §11)
 
-In: `room`, `durationMs`, `serverNowMs`, `offsetMs`, `player{positionMs,paused,buffering,durationMs|null,canSetRate,rate,seekAccuracyMs?}` (`seekAccuracyMs` an int ≥ 0, absent = 0), `nudging`, `sinceSeekMs` (null = cooled down). Out: `actions` ordered pause/setRate/seek/play (`{"do":…}` plus `rate` or `positionMs` only), `nudging`, `playInMs` (ceil wait for a scheduled local start — also set when a negative local position delays the start — else null). Only a playing seek gets the +250 lead, clamped; a held seek goes to `clamp(positionMs + offsetMs)`.
+The input holds `room`, `durationMs`, `serverNowMs`, `offsetMs`, `player{positionMs,paused,buffering,durationMs|null,canSetRate,rate,seekAccuracyMs?}`, `nudging` and `sinceSeekMs`.
+
+- `seekAccuracyMs` is an int ≥ 0. When it is absent, it counts as 0.
+- A null `sinceSeekMs` means the adapter has cooled down.
+
+The expectation holds `actions`, `nudging` and `playInMs`:
+
+- `actions` lists the adapter calls in the order pause, setRate, seek, play. Each is `{"do":…}` plus only `rate` or `positionMs`.
+- `playInMs` is the wait for a scheduled local start, rounded up, or null. It is also set when a negative local position delays the start.
+
+Only a playing seek gets the +250 lead, clamped. A held seek goes to `clamp(positionMs + offsetMs)`.
 
 ### `matching.json` (SDK.md §9.4, §9.5)
 
-In: `media`, `candidates[]{id,durationMs?,sizeBytes?,oshash?,name?,probe?{durationMs|null,takesMs}}` (`probe` = simulated answer; null = didn't open). Out: `order`, `candidates[]{id,deltaMs|null}`, `probed`, `result` (`matched|mismatch|unavailable`), `choice`, `deltaMs`.
+The input holds `media` and `candidates[]{id,durationMs?,sizeBytes?,oshash?,name?,probe?{durationMs|null,takesMs}}`. A candidate's `probe` is the simulated answer of its probe. A null `durationMs` there means the probe didn't open the file.
+
+The expectation holds `order`, `candidates[]{id,deltaMs|null}`, `probed`, `result`, `choice` and `deltaMs`. The `result` is `matched|mismatch|unavailable`.
 
 ### `same-title.json` (SDK.md §9.3)
 
-In: descriptors `a`, `b`. Out: `same`.
+The input holds two descriptors, `a` and `b`. The expectation is `same`.
 
 ### `code-routing.json` (SDK.md §4)
 
-In: `code`, `relays[]{id,prefixes}`. Out: normalized `code` + `relay` (first owner of symbol 1, else null), or only `{"error":"invalid_code"}`.
+The input holds `code` and `relays[]{id,prefixes}`.
+
+The expectation holds the normalized `code`, and `relay`: the first relay that owns the code's first symbol, or null if none does. For a code that isn't valid, it is only `{"error":"invalid_code"}`.
 
 ### `relay-list.json` (SDK.md §3.2)
 
-In: `list` (any JSON, a public list document). Out: `relays` as given, or only `{"error":"invalid_list"}`.
+The input is `list`, any JSON value taken as a public list document. The expectation is `relays` as given, or only `{"error":"invalid_list"}`.
 
 ### `names.json` (SDK.md §7.1)
 
-In: `field` (`name|client`), `value`. Out: `valid` (false ⇒ constructor throws `invalid_message`). `name`: 1-32 code points. `client`: 1-64, `<app>/<version>`, both non-empty, app ends at first `/`.
+The input holds `field`, which is `name|client`, and `value`. The expectation is `valid`. When it is false, the constructor throws `invalid_message`.
+
+- A `name` has 1-32 code points.
+- A `client` has 1-64 code points, in the form `<app>/<version>`, with both parts non-empty. The app ends at the first `/`.
 
 ### `media-check.json` (SDK.md §9.7)
 
-In: `on` (`receive|send`, also the case-name suffix), `media`. Out: `valid`. Shape/value always; sizes (4096, `ext` 1024) on send only, on the SDK's compact encoding of known members (ints integral, UTF-8). Shape cases are receive-only. Run the receive check on receive, `checkMedia` on send.
+The input holds `on` and `media`. `on` is `receive|send`, and it is also the suffix of the case name. The expectation is `valid`.
+
+Which checks apply depends on the direction:
+
+- Shape and value checks apply both ways. The shape cases are receive-only.
+- Size checks apply on send only: at most 4096 bytes for the descriptor and 1024 for `ext`. They measure the SDK's compact encoding of the known members, with ints integral, in UTF-8.
+
+Run the receive check for a receive case, and `checkMedia` for a send case.
 
 ### `room-check.json` (SDK.md §8)
 
-In: `room`, the members of a `room` message but `type` and `media`: the snapshot fields and an optional `action`. Out: `valid` (the SDK accepts the `room`). `action`, when present, is an object with `kind` a non-empty string and `by` null or a peer ID.
+The input is `room`: the members of a `room` message except `type` and `media`, that is the snapshot fields and an optional `action`. The expectation is `valid`, true when the SDK accepts the `room`.
+
+When `action` is present, it is an object whose `kind` is a non-empty string and whose `by` is null or a peer ID.
 
 ### `party.json` (SDK.md §3–§15)
 
-Traces of the party state machine. A driver runs a real `WatchParty` against a scripted relay, scripted adapters and a scripted resolver in virtual time, runs step i, settles, and compares what the party did with `outputs[i]`. The drivers are `sdk/typescript/test/unit/party-traces.test.ts`, `sdk/dart/test/party_traces_test.dart`, `sdk/kotlin/src/commonTest/kotlin/party/openwatch/PartyTraces.kt` (run by `VectorTest.party()`) and `sdk/swift/Tests/OpenWatchPartyTests/PartyTraceTests.swift`.
+`party.json` holds traces of the party state machine. A driver runs a real `WatchParty` against a scripted relay, scripted adapters and a scripted resolver, in virtual time. For each step i, it runs the step, settles, and compares what the party did with `outputs[i]`.
 
-In: `setup`, `steps[]`. Out: `outputs[]`, one per step.
+The drivers are:
 
-`setup`: `startMs` (local time at the start: the `nowMs` seam and the timers' clock); `relayOffsetMs` (relay time − local time); `rttMs` (the starting round trip `rtt` of every URL: each `ping` gets its `pong` `rtt` later, `serverTime` = local send time + floor(`rtt` / 2) + `relayOffsetMs`); `random` (the draws `u` the randomness seam yields, in order, each a multiple of 2^-53 in [0, 1): a backoff waits floor(base × (0.5 + 0.5`u`)), SDK.md §14); `base` (`Relays.at(base)`, one relay that never fetches, or null for `Relays.public()`); `list` (null with a `base`; else a valid public list, the document every GET of `https://openwatch.party/relays.json` answers, as JSON text); `name`, `client`; `resolver` (true: the scripted resolver is passed). `Relays.public()` starts from the SDK's embedded list, so a trace that routes before a refresh succeeded uses the repository's `relays.json`, which the generator reads; the other traces on the public list call `refresh` first.
+- `sdk/typescript/test/unit/party-traces.test.ts`
+- `sdk/dart/test/party_traces_test.dart`
+- `sdk/kotlin/src/commonTest/kotlin/party/openwatch/PartyTraces.kt`, run by `VectorTest.party()`
+- `sdk/swift/Tests/OpenWatchPartyTests/PartyTraceTests.swift`
 
-A step has one kind:
+A trace's input holds `setup` and `steps[]`. Its expectation is `outputs[]`, one per step.
 
-- `{"call": api, "id"?, …args}` calls the API: `create`, `join{code}`, `leave`, `end`, `close`, `setMedia{media,ref,positionMs?}`, `clearMedia`, `play`, `pause`, `seek{ms}`, `setRate{rate}`, `setOffset{ms}`, `setControl{mode}`, `lock{locked}`, `kick{peerId}`, `transferHost{peerId}`, `choose{candidate}`, `acceptMismatch`, `declineMismatch`, `resolveAgain`, `attachPlayer{player,ref}`, `detachPlayer{player?}`, `playerChanged`, and `refresh` (`Relays.refresh()`). `id` names the call for its `done` output; calls that return a result or a completion (`create`, `join`, `close`, `choose`, `detachPlayer`, `refresh`) need one. A call without `id` must not throw. `setMedia` may carry a descriptor failing the send checks (SDK.md §9.7) only with an `id`.
-- `on`: `recv`, `recvText`, `drop` take `"on": url`, the newest open connection to that URL; without it, the newest open connection. `nextOpen` and `rtt` take it too, for that URL's connections only.
-- `{"recv": msg, "malformed"?: true}`: the relay sends `msg`. A `joined`, `room`, `error` or `closed` passes SDK.md §8's check of its type, or fails it when marked `malformed`; for a `room` that is the `room-check.json` rule, and its `media` member is outside it (the party checks `media` only on a `room` of a new epoch). A `pong` is only ever a malformed one (`serverTime` not an int ≥ 0), since the driver answers pings. Other types aren't checked and can't be marked.
-- `{"recvText": text}`: the relay sends `text` as it is (not JSON, an array, …).
-- `{"drop": code|null}`: the relay closes the connection with `code` (null: none).
-- `{"nextOpen": "fail"|"hang"}`: the next connection (to `on`, else to any URL; one scripted for its URL goes first) fails without opening, or never opens. Every other connection opens in the settle after the connect.
-- `{"rtt": ms|null}`: pings the party sends from now on, to `on`'s connections or (without `on`) every URL's, are answered `ms` ≥ 0 later, or never. Pings already sent keep their round trip.
+#### Setup
+
+| Member | What it sets |
+|---|---|
+| `startMs` | The local time at the start: the `nowMs` seam and the timers' clock. |
+| `relayOffsetMs` | Relay time − local time. |
+| `rttMs` | The starting round trip `rtt` of every URL. |
+| `random` | The draws `u` the randomness seam yields, in order. |
+| `base` | `Relays.at(base)`, one relay that never fetches, or null for `Relays.public()`. |
+| `list` | Null with a `base`. Otherwise a valid public list, as JSON text. |
+| `name`, `client` | The party's name and client. |
+| `resolver` | True when the scripted resolver is passed. |
+
+Each `ping` gets its `pong` `rtt` later. The pong's `serverTime` is the local send time + floor(`rtt` / 2) + `relayOffsetMs`.
+
+Each draw in `random` is a multiple of 2^-53 in [0, 1). A backoff waits floor(base × (0.5 + 0.5`u`)), as SDK.md §14 says.
+
+`list` is the document every GET of `https://openwatch.party/relays.json` answers. `Relays.public()` starts from the SDK's embedded list. A trace that routes before a refresh succeeded therefore uses the repository's `relays.json`, which the generator reads. The other traces on the public list call `refresh` first.
+
+#### Steps
+
+A step has one kind. It calls the API, plays the relay or the network, moves time, or drives an adapter or the resolver.
+
+A call step is `{"call": api, "id"?, …args}`. These are the calls, with their arguments:
+
+| Area | Calls |
+|---|---|
+| Room | `create`, `join{code}`, `leave`, `end`, `close` |
+| Media | `setMedia{media,ref,positionMs?}`, `clearMedia` |
+| Playback | `play`, `pause`, `seek{ms}`, `setRate{rate}`, `setOffset{ms}` |
+| Host | `setControl{mode}`, `lock{locked}`, `kick{peerId}`, `transferHost{peerId}` |
+| Matching | `choose{candidate}`, `acceptMismatch`, `declineMismatch`, `resolveAgain` |
+| Player | `attachPlayer{player,ref}`, `detachPlayer{player?}`, `playerChanged` |
+| Relays | `refresh` (`Relays.refresh()`) |
+
+- `id` names the call for its `done` output. Calls that return a result or a completion need one: `create`, `join`, `close`, `choose`, `detachPlayer` and `refresh`.
+- A call without `id` must not throw.
+- `setMedia` may carry a descriptor that fails the send checks (SDK.md §9.7) only with an `id`.
+
+These steps play the relay:
+
+- `{"recv": msg, "malformed"?: true}`: the relay sends `msg`.
+- `{"recvText": text}`: the relay sends `text` as it is, such as text that isn't JSON, or an array.
+- `{"drop": code|null}`: the relay closes the connection with `code`, or with none for null.
+
+`recv`, `recvText` and `drop` take `"on": url` for the newest open connection to that URL. Without `on`, they act on the newest open connection. `nextOpen` and `rtt` take `on` too, for that URL's connections only.
+
+A received `joined`, `room`, `error` or `closed` passes SDK.md §8's check of its type, or fails it when marked `malformed`. For a `room`, that check is the `room-check.json` rule. Its `media` member is outside the rule, because the party checks `media` only on a `room` of a new epoch.
+
+A received `pong` is only ever a malformed one, whose `serverTime` is not an int ≥ 0, since the driver answers pings itself. Other types aren't checked and can't be marked.
+
+These steps play the network and the clock:
+
+- `{"nextOpen": "fail"|"hang"}`: the next connection fails without opening, or never opens.
+- `{"rtt": ms|null}`: pings the party sends from now on are answered `ms` ≥ 0 later, or never. Pings already sent keep their round trip.
 - `{"nextGet": doc|"fail"|"hang"}`: the next GET answers `doc` (an object) instead of `list`, fails, or never answers.
 - `{"advance": ms}`: local time moves `ms` ≥ 1 ahead.
-- `{"player": id, positionMs?, paused?, buffering?, durationMs?, firstFrameShown?, canSetRate?, seekAccuracyMs?, playThrows?}` creates adapter `id` on first use (0, true, false, null, true, false, 0, false) and sets the members given. While not paused and not buffering its position moves at the rate last set: the position last set + floor(elapsed × rate). `canSetRate` false means no `setRate`. A command takes effect when it finishes (`play` unpauses, `pause` pauses, `seek` sets the position, `setRate` the rate) and finishes at once unless held; with `playThrows`, `play` throws and changes nothing.
-- `{"hold": id}`: adapter `id`'s next command stays running. `{"finish": id, "throws"?}`: it finishes, or throws with no effect.
-- `{"answer": [candidate]}` / `{"answerThrows": true}`: the pending `resolve` returns the candidates, or throws. A candidate is `{id, ref?, durationMs?, sizeBytes?, oshash?, name?, probe?}`, `ref` a non-empty string (absent: `id`); `"probe": true` gives it a scripted probe.
+
+With `on`, `nextOpen` applies to the next connection to that URL. Without it, it applies to the next connection to any URL, but one scripted for that connection's URL goes first. Every other connection opens in the settle after the connect.
+
+With `on`, `rtt` applies to that URL's connections. Without it, it applies to every URL's.
+
+These steps drive the adapters:
+
+- `{"player": id, positionMs?, paused?, buffering?, durationMs?, firstFrameShown?, canSetRate?, seekAccuracyMs?, playThrows?}` creates adapter `id` on first use and sets the members given.
+- `{"hold": id}`: adapter `id`'s next command stays running.
+- `{"finish": id, "throws"?}`: the held command finishes, or throws with no effect.
+
+A new adapter starts with `positionMs` 0, `paused` true, `buffering` false, `durationMs` null, `firstFrameShown` true, `canSetRate` false, `seekAccuracyMs` 0 and `playThrows` false.
+
+While an adapter is neither paused nor buffering, its position moves at the rate last set: the position last set + floor(elapsed × rate). With `canSetRate` false, the adapter has no `setRate`.
+
+A command takes effect when it finishes: `play` unpauses, `pause` pauses, `seek` sets the position and `setRate` the rate. It finishes at once unless held. With `playThrows`, `play` throws and changes nothing.
+
+These steps drive the resolver:
+
+- `{"answer": [candidate]}` / `{"answerThrows": true}`: the pending `resolve` returns the candidates, or throws.
 - `{"probeAnswer": id, "durationMs": int|null}` / `{"probeThrows": id}`: candidate `id`'s running probe returns, or throws.
 
-Settling runs everything ready without moving time: continuations, connections opening, timers due now (`pong`s with a round trip of 0 included), commands finishing, again until nothing is ready. `advance` takes each timer due by the end in turn, earliest first and equal times in the order they were set, sets the clock to its time and settles; then it sets the clock to the end and settles. No wall-clock wait anywhere.
+A candidate is `{id, ref?, durationMs?, sizeBytes?, oshash?, name?, probe?}`. Its `ref` is a non-empty string, and is `id` when absent. `"probe": true` gives the candidate a scripted probe.
 
-An output is `{send?, command?, event?, resolver?, net?, done?, state?}`. An absent channel means nothing happened on it; a present one is non-empty and compared exactly, in order. Order across channels isn't pinned.
+#### Settling and time
 
-- `send`: each message the party sent, but `ping`s, as JSON, or `{on: url, msg}` where the trace also pins the connection it went on.
-- `command`: `{player, do}` plus `positionMs` (`seek`) or `rate` (`setRate`, rounded to 6 decimals), when the SDK calls the adapter.
-- `event`: `{type:"action", kind, byPeerId, by, byMe, room}` (`by` the entry's `peerId` or null, `room` the snapshot's `rev`), `{type:"participantJoined"|"participantLeft", peerId}`, `{type:"error", code, re}`, `{type:"resolveFailed", timeout}` (true: the resolve timeout, false: the resolver threw), `{type:"playBlocked"}`, `{type:"ended", reason, error}` (`error` its code or null).
-- `resolver`: `{resolve: title}` / `{resolveCancelled: title}` as the party calls or cancels the resolver; `{probe: id}` / `{probeCancelled: id}` likewise for probes.
-- `net`: `{get: url}` per GET, `{open: url}` per connect, `{close: url, code}` when the party closes a connection that had opened (`code` null when it gave none). Compared per URL: each URL's entries in order, the order between URLs not pinned.
-- `done`: `{id}`, `{id, value}` or `{id, error: code, re?, message?}` once call `id` completes: `value` is `create`'s code, `choose`'s or `refresh`'s boolean; `error` the `PartyError` code. `re` (string or null) and `message` are compared only where the trace writes them; `message` only for a relay's refusal. The order of a step's `done` entries isn't pinned: compare them by `id`.
-- `state`: only the members listed, read after the settle: `connection`, `peerId`, `room` (`rev` or null), `media` (`title` or null), `match` (`{state, deltaMs?}` or null), `choice` (`{id, ref}` or null), `mismatch` (`{id, deltaMs}` or null), `candidates` (`[{id, deltaMs}]`), `offsetMs`, `player`, `endReason`, `isHost`, `canControl` and `roomPositionMs` (its value then).
+Settling runs everything that is ready without moving time, again and again until nothing is ready. That covers continuations, connections opening, commands finishing, and timers due now, `pong`s with a round trip of 0 included.
 
-A trace fails also when, after its last step, a `random` value wasn't drawn (or one more was), a `resolve` or probe is unanswered, an adapter still runs a held command, or a call with `id` never reported `done`. The driver then closes the party without checking more. The generator refuses unknown step kinds, calls, channels, members and state fields, a count of outputs other than steps, commands of unknown adapters, `done` of unknown or finished calls, relay input that passes or fails its check against its `malformed` mark, draws that aren't multiples of 2^-53, and duplicate names.
+`advance` moves time like this:
+
+1. It takes each timer due by the end in turn: earliest first, and timers due at the same time in the order they were set.
+2. For each timer, it sets the clock to the timer's time and settles.
+3. Then it sets the clock to the end and settles.
+
+There is no wall-clock wait anywhere.
+
+#### Outputs
+
+An output is `{send?, command?, event?, resolver?, net?, done?, state?}`. An absent channel means nothing happened on it. A present one is non-empty and compared exactly, in order. The order across channels isn't pinned.
+
+- `send`: each message the party sent as JSON, except `ping`s. Where the trace also pins the connection a message went on, the entry is `{on: url, msg}`.
+- `command`: `{player, do}` when the SDK calls the adapter, plus `positionMs` for `seek` or `rate` for `setRate`. The rate is rounded to 6 decimals.
+- `event`: one of the events below.
+- `resolver`: `{resolve: title}` / `{resolveCancelled: title}` as the party calls or cancels the resolver, and `{probe: id}` / `{probeCancelled: id}` likewise for probes.
+- `net`: `{get: url}` per GET, `{open: url}` per connect, and `{close: url, code}` when the party closes a connection that had opened. `code` is null when the party gave none.
+- `done`: `{id}`, `{id, value}` or `{id, error: code, re?, message?}` once call `id` completes.
+- `state`: the party's state, read after the settle.
+
+The events are:
+
+- `{type:"action", kind, byPeerId, by, byMe, room}`, where `by` is the entry's `peerId` or null and `room` is the snapshot's `rev`.
+- `{type:"participantJoined"|"participantLeft", peerId}`.
+- `{type:"error", code, re}`.
+- `{type:"resolveFailed", timeout}`, where `timeout` is true for the resolve timeout and false when the resolver threw.
+- `{type:"playBlocked"}`.
+- `{type:"ended", reason, error}`, where `error` is its code or null.
+
+`net` is compared per URL: each URL's entries in order, with the order between URLs not pinned.
+
+In `done`, `value` is `create`'s code, or `choose`'s or `refresh`'s boolean. `error` is the `PartyError` code. `re` (a string or null) and `message` are compared only where the trace writes them, and `message` only for a relay's refusal. The order of a step's `done` entries isn't pinned, so compare them by `id`.
+
+`state` holds only the members the trace lists, from these:
+
+| Member | Value |
+|---|---|
+| `connection`, `peerId`, `offsetMs`, `player`, `endReason`, `isHost`, `canControl` | Its value. |
+| `room` | `rev`, or null. |
+| `media` | `title`, or null. |
+| `match` | `{state, deltaMs?}`, or null. |
+| `choice` | `{id, ref}`, or null. |
+| `mismatch` | `{id, deltaMs}`, or null. |
+| `candidates` | `[{id, deltaMs}]`. |
+| `roomPositionMs` | Its value then. |
+
+#### When a trace fails
+
+Besides an output that doesn't match, a trace fails when any of these holds after its last step:
+
+- A `random` value wasn't drawn, or one more was.
+- A `resolve` or probe is unanswered.
+- An adapter still runs a held command.
+- A call with `id` never reported `done`.
+
+The driver then closes the party without checking more.
+
+The generator refuses a trace when any of these holds:
+
+- It has an unknown step kind, call, channel, member or state field.
+- Its count of outputs is other than its count of steps.
+- It has a command of an unknown adapter, or a `done` of an unknown or finished call.
+- Relay input passes or fails its check against its `malformed` mark.
+- A draw isn't a multiple of 2^-53.
+- Its name is a duplicate.
