@@ -1,15 +1,23 @@
-/// The error of a `create` or `join` on a party after `close()`: a programming error, not a `PartyError` (SDK.md
-/// §7.4).
+/// The error that `create` and `join` throw on a party after `close()` (SDK.md §7.4).
+///
+/// Calling them after `close()` is a programming error, so this error is not a `PartyError`.
 public struct PartyClosedError: Error, Sendable, CustomStringConvertible {
     public var description: String { "the party is closed" }
 }
 
-/// One participant's session (SDK.md §16.2): the connection to the room's relay, the room state, matching the room's
-/// media to the user's own file through `Resolver`, `status` reports, and driving the attached `PlayerAdapter` so it
-/// follows the room.
+/// One participant's session in a room (SDK.md §16.2).
+///
+/// A party does this work for the app:
+///
+/// - It keeps the connection to the room's relay, and the room state.
+/// - It matches the room's media to the user's own file through a `Resolver`.
+/// - It sends `status` reports.
+/// - It drives the attached `PlayerAdapter`, so that the player follows the room.
 ///
 /// The party is isolated to the main actor, and calls the adapter, the resolver and its transport there.
-/// `Ref` is the app's value for a file (a URL, a library item ID); the party compares refs with `==` (SDK.md §10.2).
+///
+/// `Ref` is the app's value for a file, such as a URL or a library item ID. The party compares two refs with `==`
+/// (SDK.md §10.2).
 @MainActor
 public final class WatchParty<Ref: Equatable & Sendable> {
     private let relays: Relays
@@ -20,19 +28,22 @@ public final class WatchParty<Ref: Equatable & Sendable> {
     private let clock: any PartyClock
     private var random: any RandomNumberGenerator
 
+    /// Creates a party.
+    ///
     /// - Parameters:
-    ///   - relays: the relay list the party creates and joins rooms with; an app keeps one for all its parties.
-    ///   - client: the app's `<name>/<version>` (`Example/1.0`), shown to everyone and used by the relay's terms;
-    ///     1–64 characters.
-    ///   - name: the user's display name, 1–32 characters.
-    ///   - resolver: finds the user's files for other participants' media; without one the party never searches: their
-    ///     media has no candidates and the match is unavailable from the start (SDK.md §9.2).
-    ///   - connect: opens the party's WebSockets; by default `urlSessionConnect`.
-    ///   - clock: local time and timers; tests pass a virtual one.
-    ///   - random: the source of the party's only draws, each one u = `Double.random(in: 0..<1, using:)`: the spread
-    ///     of reconnects (SDK.md §14).
-    /// - Throws: `PartyError` `invalid_message` when `client` or `name` breaks SPEC.md §6.3 (lengths in code points, no
-    ///   forbidden characters, the `<app>/<version>` shape).
+    ///   - relays: The relay list the party creates and joins rooms with. An app keeps one for all its parties.
+    ///   - client: The app's `<name>/<version>`, such as `Example/1.0`, in 1 to 64 characters. Everyone in the room
+    ///     sees it, and the relay's terms use it.
+    ///   - name: The user's display name, in 1 to 32 characters.
+    ///   - resolver: Finds the user's files for other participants' media. Without a resolver, the party never
+    ///     searches. Other participants' media then has no candidates, and the match is unavailable from the start
+    ///     (SDK.md §9.2).
+    ///   - connect: Opens the party's WebSockets. The default is `urlSessionConnect`.
+    ///   - clock: Local time and timers. Tests pass a virtual clock.
+    ///   - random: The source of the party's only random draws, which spread out reconnects (SDK.md §14). Each draw u
+    ///     is `Double.random(in: 0..<1, using:)`.
+    /// - Throws: `PartyError` with code `invalid_message` when `client` or `name` breaks SPEC.md §6.3. That section
+    ///   counts lengths in code points, refuses forbidden characters and gives `client` its `<app>/<version>` shape.
     public init(
         relays: Relays,
         client: String,
@@ -56,7 +67,9 @@ public final class WatchParty<Ref: Equatable & Sendable> {
     /// One draw u in [0, 1) from `random` (SDK.md §16.8).
     private func draw() -> Double { Double.random(in: 0..<1, using: &random) }
 
-    /// Everything the UI shows. Changes on events, never per tick; `states()` reports every change.
+    /// Everything the UI shows.
+    ///
+    /// The state changes on events, never per tick. `states()` reports every change.
     public private(set) var state = PartyState<Ref>()
 
     private var stateSubscribers: [Int: AsyncStream<PartyState<Ref>>.Continuation] = [:]
@@ -64,7 +77,9 @@ public final class WatchParty<Ref: Equatable & Sendable> {
     private var nextSubscriber = 0
     private var streamsFinished = false
 
-    /// A new subscription to `state`: every state published from now on, in order. Finishes when the party closes.
+    /// A new subscription to `state`.
+    ///
+    /// The stream yields every state published from now on, in order. It finishes when the party closes.
     public func states() -> AsyncStream<PartyState<Ref>> {
         let (stream, continuation) = AsyncStream<PartyState<Ref>>.makeStream()
         if streamsFinished {
@@ -80,9 +95,13 @@ public final class WatchParty<Ref: Equatable & Sendable> {
         return stream
     }
 
-    /// A new subscription to the party's events (SDK.md §15): actions, participants coming and going, refusals,
-    /// resolver failures, a player that refused to start and the end. Never drops: it gets every event emitted while
-    /// it is subscribed, in order, however slowly it is read. Finishes when the party closes, after `EndedEvent`.
+    /// A new subscription to the party's events (SDK.md §15).
+    ///
+    /// The events report actions, participants coming and going, refusals, resolver failures, a player that refused to
+    /// start, and the end of the party.
+    ///
+    /// The stream never drops an event. It gets every event emitted while it is subscribed, in order, however slowly it
+    /// is read. It finishes when the party closes, after `EndedEvent`.
     public func events() -> AsyncStream<any PartyEvent> {
         let (stream, continuation) = AsyncStream<any PartyEvent>.makeStream()
         if streamsFinished {
@@ -186,13 +205,16 @@ public final class WatchParty<Ref: Equatable & Sendable> {
 
     // MARK: Create and join
 
-    /// Creates a room and returns its code, 6 symbols unformatted (SDK.md §6). With several relays it connects to all
-    /// of them at once and creates the room on the first one whose clock gets a sample. A relay that answers
-    /// `relay_full` passes `create` on to the first relay of the list not tried yet; `relay_full` when every one is
-    /// full.
+    /// Creates a room and returns its code (SDK.md §6).
     ///
-    /// - Throws: `PartyError`; `PartyClosedError` after `close()`; `CancellationError` when the calling task is
-    ///   cancelled.
+    /// With several relays, the party connects to all of them at once. It creates the room on the first relay whose
+    /// clock gets a sample.
+    ///
+    /// When a relay answers `relay_full`, the party passes `create` on to the first untried relay of the list.
+    ///
+    /// - Returns: The room code, as 6 unformatted symbols.
+    /// - Throws: `PartyError` when creating fails, with code `relay_full` when every relay is full. Throws
+    ///   `PartyClosedError` after `close()`, and `CancellationError` when the calling task is cancelled.
     public func create() async throws -> String {
         try await attempt { [self] myGeneration in
             let list = relays.list
@@ -218,11 +240,13 @@ public final class WatchParty<Ref: Equatable & Sendable> {
         }
     }
 
-    /// Joins the room `code`, typed or pasted (`k7m-q2x` works), on the relay that owns it (SDK.md §4). The code is
-    /// checked first: `invalid_code` before `already_in_room`.
+    /// Joins the room `code` on the relay that owns it (SDK.md §4).
     ///
-    /// - Throws: `PartyError`; `PartyClosedError` after `close()`; `CancellationError` when the calling task is
-    ///   cancelled.
+    /// `code` may be typed or pasted, so `k7m-q2x` works too. The party checks the code first, so an invalid code fails
+    /// with `invalid_code` rather than `already_in_room`.
+    ///
+    /// - Throws: `PartyError` when joining fails. Throws `PartyClosedError` after `close()`, and `CancellationError`
+    ///   when the calling task is cancelled.
     public func join(_ code: String) async throws {
         try requireOpen()
         guard let normalized = normalizeCode(code) else { throw PartyError(.invalidCode, "not a room code") }
@@ -690,7 +714,9 @@ public final class WatchParty<Ref: Equatable & Sendable> {
         return []
     }
 
-    /// Plays the offered file: `match` becomes mismatched (SDK.md §9.6).
+    /// Plays the offered file despite the mismatch (SDK.md §9.6).
+    ///
+    /// `match` becomes mismatched.
     public func acceptMismatch() {
         guard let offered = mismatch else { return }
         choice = offered.candidate
@@ -702,7 +728,9 @@ public final class WatchParty<Ref: Equatable & Sendable> {
         requestStatus()
     }
 
-    /// Doesn't play the offered file: `match` becomes unavailable and the room stops waiting for this user.
+    /// Declines the offered file.
+    ///
+    /// The party doesn't play the file. `match` becomes unavailable, and the room stops waiting for this user.
     public func declineMismatch() {
         guard let offered = mismatch else { return }
         match = Match(.unavailable, deltaMs: offered.deltaMs)
@@ -714,11 +742,21 @@ public final class WatchParty<Ref: Equatable & Sendable> {
         requestStatus()
     }
 
-    /// Takes a file the user picked by hand (SDK.md §9.6), probing it when it has no duration: `candidate` becomes the
-    /// choice, also when it has the current choice's id (a refreshed `ref` replaces the old one). False when the room
-    /// has no media, the file has no duration (1 ms to 7 days) and no probe, or the probe fails; then nothing changes.
-    /// The latest call wins: an earlier one still probing is cancelled and returns false, and so is one when matching
-    /// is cancelled (a new epoch, `resolveAgain()`, the end) or the calling task is cancelled.
+    /// Takes a file that the user picked by hand (SDK.md §9.6).
+    ///
+    /// When the file has no duration, the party probes it first. `candidate` then becomes the choice, also when it has
+    /// the current choice's id, so a refreshed `ref` replaces the old one.
+    ///
+    /// The latest call wins. A call returns false, and nothing changes, in these cases:
+    ///
+    /// - The room has no media.
+    /// - The file has no duration from 1 ms to 7 days, and no probe.
+    /// - The probe fails.
+    /// - A later call started while this call was still probing, and cancelled it.
+    /// - Matching was cancelled, by a new epoch, `resolveAgain()` or the end.
+    /// - The calling task was cancelled.
+    ///
+    /// - Returns: True once `candidate` is the choice, or false in the cases above.
     public func choose(_ candidate: Candidate<Ref>) async -> Bool {
         guard let target = media else { return false }
         manualProbe?.cancel()
@@ -763,10 +801,15 @@ public final class WatchParty<Ref: Equatable & Sendable> {
         return duration
     }
 
-    /// Asks the resolver again for the current media (SDK.md §9.1), keeping what plays: the offset and the adapter stay
-    /// as they are. Without a choice, matching starts over (the resolver and the walk). With one,
-    /// only the resolver and the ranking run, and their result replaces `state.candidates` for `choose`; the choice
-    /// and the match stay. Nothing without media or in an own-media epoch.
+    /// Asks the resolver again for the current media (SDK.md §9.1).
+    ///
+    /// The call keeps what plays, so the offset and the adapter stay as they are.
+    ///
+    /// - Without a choice, matching starts over with the resolver and the walk.
+    /// - With a choice, only the resolver and the ranking run. Their result replaces `state.candidates` for `choose`,
+    ///   and the choice and the match stay.
+    ///
+    /// The call does nothing without media, or in an epoch of the party's own media.
     public func resolveAgain() {
         guard let target = media, !ownEpoch else { return }
         cancelMatching()
@@ -785,14 +828,27 @@ public final class WatchParty<Ref: Equatable & Sendable> {
 
     // MARK: The player (SDK.md §10.2, §11)
 
-    /// The user's player `player` has the file `ref` open: normally `state.choice.ref` as published, or as host the
-    /// `ref` passed to `setMedia`. The party follows the room on it (binds it) whenever `ref` equals the choice's
-    /// `ref`, the match is matched or mismatched and no `setMedia` of this party is pending (SDK.md §10.2), and it
-    /// re-checks that on every change: attach once per file the player opens. A file opened for a choice that has
-    /// since changed stays unbound. Attaching another adapter releases this one as `detachPlayer` does; attaching the
-    /// same one again replaces its ref and keeps its queued commands. It works while idle or ended too: the adapter
-    /// stays attached into the session the next `create`, `join` or `resume` starts, also when an attempt fails. The
-    /// party's end releases it, so an app whose player still has its file open after `EndedEvent` attaches it again.
+    /// Tells the party that the user's player `player` has the file `ref` open.
+    ///
+    /// `ref` is normally `state.choice.ref` as published. As host, it can also be the `ref` passed to `setMedia`.
+    ///
+    /// The party follows the room on the player, which binds it, whenever all of these hold (SDK.md §10.2):
+    ///
+    /// - `ref` equals the choice's `ref`.
+    /// - The match is matched or mismatched.
+    /// - No `setMedia` of this party is pending.
+    ///
+    /// The party re-checks these conditions on every change, so attach once per file the player opens. A file opened
+    /// for a choice that has since changed stays unbound.
+    ///
+    /// Attaching another adapter releases the one attached before, as `detachPlayer` does. Attaching the same adapter
+    /// again replaces its ref and keeps its queued commands.
+    ///
+    /// The call works while the party is idle or ended too. The adapter stays attached into the session that the next
+    /// `create`, `join` or `resume` starts, also when an attempt fails.
+    ///
+    /// The party's end releases the adapter. An app whose player still has its file open after `EndedEvent` therefore
+    /// attaches it again.
     public func attachPlayer(_ player: any PlayerAdapter, ref: Ref) {
         if player !== adapter {
             release()
@@ -809,13 +865,16 @@ public final class WatchParty<Ref: Equatable & Sendable> {
         step()
     }
 
-    /// The user left the player: the room stops waiting for this user. Without `player` it releases the attached
-    /// adapter; with it, only when `player` is the one attached, and otherwise nothing changes. A released adapter's
-    /// commands that haven't started are dropped, and while the SDK was nudging it gets the room's rate back once
-    /// (SDK.md §11.2).
+    /// Tells the party that the user left the player, so the room stops waiting for this user.
     ///
-    /// - Returns: a task that completes once no released adapter has a command queued or running; await it before
-    ///   disposing the player.
+    /// Without `player`, the call releases the attached adapter. With `player`, it does so only when `player` is the
+    /// one attached. Otherwise nothing changes.
+    ///
+    /// The party drops a released adapter's commands that haven't started. If the SDK was nudging the adapter, the
+    /// adapter gets the room's rate back once (SDK.md §11.2).
+    ///
+    /// - Returns: A task that completes once no released adapter has a command queued or running. Await it before
+    ///   disposing of the player.
     @discardableResult
     public func detachPlayer(_ player: (any PlayerAdapter)? = nil) -> Task<Void, Never> {
         if player == nil || player === adapter {
@@ -828,7 +887,9 @@ public final class WatchParty<Ref: Equatable & Sendable> {
         return released()
     }
 
-    /// The player's state changed (optional; otherwise the SDK sees it on the next tick).
+    /// Tells the party that the player's state changed.
+    ///
+    /// Calling it is optional. Without the call, the SDK sees the change on the next tick.
     public func playerChanged() {
         updatePlayer()
         publish()
@@ -1108,13 +1169,17 @@ public final class WatchParty<Ref: Equatable & Sendable> {
 
     // MARK: Local commands (SDK.md §12)
 
-    /// Asks the room to play; it starts everyone together.
+    /// Asks the room to play.
+    ///
+    /// The room starts everyone together.
     public func play() throws {
         try requireController()
         send(Out.play())
     }
 
-    /// Pauses the room; the bound player pauses at once, and its position (in the reference timeline) goes along.
+    /// Pauses the room.
+    ///
+    /// The bound player pauses at once, and the party sends its position with the pause, in the reference timeline.
     public func pause() throws {
         try requireController()
         let player = bound ? adapter : nil
@@ -1124,7 +1189,9 @@ public final class WatchParty<Ref: Equatable & Sendable> {
         send(Out.pause(positionMs: position))
     }
 
-    /// Seeks the room; `positionMs` is in the user's own file.
+    /// Seeks the room to `positionMs`.
+    ///
+    /// `positionMs` is a position in the user's own file.
     public func seek(to positionMs: Int64) throws {
         try requireController()
         if positionMs < 0 { throw PartyError(.invalidMessage, "positionMs is negative") }
@@ -1150,7 +1217,7 @@ public final class WatchParty<Ref: Equatable & Sendable> {
         return max(0, positionMs - offsetMs)
     }
 
-    /// Sets the room's rate, 0.5 to 2.0.
+    /// Sets the room's rate, from 0.5 to 2.0.
     public func setRate(_ rate: Double) throws {
         try requireController()
         guard rate >= Owp.minRate && rate <= Owp.maxRate else { throw PartyError(.invalidMessage, "rate is outside 0.5–2.0") }
@@ -1162,8 +1229,12 @@ public final class WatchParty<Ref: Equatable & Sendable> {
         send(Out.rate(rate))
     }
 
-    /// Local position = room position + `offsetMs`, for a file that differs from the reference (SDK.md §13). At most
-    /// 604800000 (7 days) either way; anything else throws `invalid_message` and changes nothing.
+    /// Sets the offset for a file that differs from the reference (SDK.md §13).
+    ///
+    /// The local position is the room position plus `offsetMs`. The offset is at most 604800000 ms, which is 7 days,
+    /// either way.
+    ///
+    /// - Throws: `PartyError` with code `invalid_message` for any other value, and nothing changes.
     public func setOffset(_ offsetMs: Int64) throws {
         guard (-Owp.maxOffsetMs...Owp.maxOffsetMs).contains(offsetMs) else {
             throw PartyError(.invalidMessage, "offsetMs is beyond \(Owp.maxOffsetMs) either way")
@@ -1175,13 +1246,16 @@ public final class WatchParty<Ref: Equatable & Sendable> {
         step()
     }
 
-    /// Shares `media` with the room (host), starting at `positionMs` of the host's own file. `ref` is the app's value
-    /// that reopens that file. Whenever the room plays `media`, also after this party hands over host, `state.choice`
-    /// is a candidate with id `""`, `ref` and the descriptor's duration (SDK.md §9.1): the app opens it like any
-    /// choice, and a player already attached with `ref` binds without reopening.
+    /// Shares `media` with the room, starting at `positionMs` of the host's own file.
     ///
-    /// - Throws: `PartyError` `not_in_room`, `forbidden`, or `invalid_message` when `checkMedia` refuses `media` or
-    ///   `positionMs` is negative or beyond 2^53 − 1.
+    /// Only the host shares media. `ref` is the app's value that reopens the host's file.
+    ///
+    /// Whenever the room plays `media`, `state.choice` is a candidate with id `""`, `ref` and the descriptor's duration
+    /// (SDK.md §9.1). This holds also after this party hands over host. The app opens that choice like any other, and a
+    /// player already attached with `ref` binds without reopening.
+    ///
+    /// - Throws: `PartyError` with code `not_in_room` or `forbidden`. It throws `invalid_message` when `checkMedia`
+    ///   refuses `media`, or when `positionMs` is negative or beyond 2^53 − 1.
     public func setMedia(_ media: Media, ref: Ref, positionMs: Int64 = 0) throws {
         try requireMember()
         try requireHost()
@@ -1231,7 +1305,9 @@ public final class WatchParty<Ref: Equatable & Sendable> {
         send(Out.lock(locked))
     }
 
-    /// Ends the room for everyone (host); the party ends when the relay confirms.
+    /// Ends the room for everyone.
+    ///
+    /// Only the host ends the room. The party ends when the relay confirms.
     public func end() throws {
         try requireMember()
         try requireHost()
@@ -1366,8 +1442,11 @@ public final class WatchParty<Ref: Equatable & Sendable> {
 
     // MARK: Ending
 
-    /// Leaves the room for good; the party ends with `EndReason.left`. During `create` or `join` it cancels them
-    /// instead (they fail with `cancelled`) and the party goes back to idle. Nothing outside a room.
+    /// Leaves the room for good, and the party ends with `EndReason.left`.
+    ///
+    /// During `create` or `join`, it cancels them instead. They fail with `cancelled`, and the party returns to idle.
+    ///
+    /// Outside a room, the call does nothing.
     public func leave() {
         switch connection {
         case .connected:
@@ -1384,18 +1463,22 @@ public final class WatchParty<Ref: Equatable & Sendable> {
         }
     }
 
-    /// The room's position now in the reference file's timeline; nil without media or a clock sample.
+    /// The room's position now in the reference file's timeline, or nil without media or a clock sample.
     public func roomPositionMs() -> Int64? {
         guard let room, let media, let now = link?.relayNow() else { return nil }
         return room.position(durationMs: media.durationMs, at: now)
     }
 
-    /// Leaves the room if in one and releases everything, the adapter as `detachPlayer` does; the party can't be used
-    /// again, and `states()` and `events()` finish. A `create` or `join` that already reached the relay finishes in
-    /// the background first, to leave the room it may have joined.
+    /// Leaves the room, if the party is in one, and releases everything.
     ///
-    /// - Returns: a task that completes once no released adapter has a command queued or running, a rate restore
-    ///   included; await it before disposing the player.
+    /// The party releases the adapter as `detachPlayer` does. Afterwards the party can't be used again, and `states()`
+    /// and `events()` finish.
+    ///
+    /// A `create` or `join` that already reached the relay finishes in the background first, so that it can leave the
+    /// room it may have joined.
+    ///
+    /// - Returns: A task that completes once no released adapter has a command queued or running, including a rate
+    ///   restore. Await it before disposing of the player.
     @discardableResult
     public func close() -> Task<Void, Never> {
         if closed { return released() }

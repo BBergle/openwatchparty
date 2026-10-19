@@ -1,9 +1,9 @@
 /// The room's playback phase (SPEC.md §12.1).
 public enum Phase: String, Hashable, Sendable, CaseIterable {
-    /// No media.
+    /// The room has no media.
     case idle
     case paused
-    /// Will play once the readiness barrier releases.
+    /// The room plays once the readiness barrier releases.
     case waiting
     case playing
 }
@@ -14,15 +14,15 @@ public enum Control: String, Hashable, Sendable, CaseIterable {
     case everyone
 }
 
-/// A participant's player as reported in `status` (SPEC.md §7.5, SDK.md §10.2).
+/// A participant's player, as reported in `status` (SPEC.md §7.5, SDK.md §10.2).
 public enum PlayerState: String, Hashable, Sendable, CaseIterable {
-    /// Not in the player.
+    /// The user is not in the player.
     case idle
-    /// Opening, searching, seeking, or waiting on the user's mismatch choice.
+    /// The player is opening, searching or seeking, or waits for the user's choice about a mismatch.
     case loading
-    /// Able to play at once, close enough to the room's position that following it needs no seek.
+    /// The player can play at once, and is close enough to the room's position that following it needs no seek.
     case ready
-    /// Was playing, now stalled.
+    /// The player was playing and is now stalled.
     case buffering
 }
 
@@ -33,11 +33,13 @@ public enum MatchState: String, Hashable, Sendable, CaseIterable {
     case matched
     /// The user plays a file outside that margin, with an offset.
     case mismatched
-    /// No file plays: none found, or the user declined.
+    /// No file plays, because none was found or the user declined.
     case unavailable
 }
 
-/// A participant's file for the current media. `deltaMs` is its duration − the media's `durationMs`.
+/// A participant's file for the current media.
+///
+/// `deltaMs` is the file's duration minus the media's `durationMs`.
 public struct Match: Hashable, Sendable {
     public let state: MatchState
     public let deltaMs: Int64?
@@ -68,15 +70,15 @@ public struct Match: Hashable, Sendable {
 
 /// The SDK's connection to the room (SDK.md §16.6).
 public enum Connection: Hashable, Sendable, CaseIterable {
-    /// Not in a room and not trying to be.
+    /// The party is not in a room and not trying to be.
     case idle
     /// `create`, `join` or `resume` is under way.
     case connecting
-    /// A member with an open connection.
+    /// The party is a member with an open connection.
     case connected
-    /// The connection dropped; the SDK is resuming (SDK.md §14).
+    /// The connection dropped, and the SDK is resuming (SDK.md §14).
     case reconnecting
-    /// The party ended (`PartyState.endReason`).
+    /// The party ended, for the reason in `PartyState.endReason`.
     case ended
 }
 
@@ -92,7 +94,7 @@ public enum EndReason: Hashable, Sendable, CaseIterable {
     case expired
     /// A resume on another connection took this participant over.
     case replaced
-    /// Resuming became impossible; `EndedEvent.error` says why.
+    /// Resuming became impossible, and `EndedEvent.error` says why.
     case lost
 }
 
@@ -100,7 +102,7 @@ public enum EndReason: Hashable, Sendable, CaseIterable {
 public struct Participant: Hashable, Sendable {
     public let peerId: String
     public let name: String
-    /// `<app>/<version>`.
+    /// The participant's app, as `<app>/<version>`.
     public let client: String
     public let host: Bool
     public let connected: Bool
@@ -116,7 +118,9 @@ public struct Room: Hashable, Sendable {
     public let epoch: Int64
     public let phase: Phase
     public let positionMs: Int64
-    /// Relay time; in `playing`, the moment playback runs from `positionMs`.
+    /// A relay time.
+    ///
+    /// In `playing`, it is the moment at which playback runs from `positionMs`.
     public let atMs: Int64
     public let rate: Double
     public let control: Control

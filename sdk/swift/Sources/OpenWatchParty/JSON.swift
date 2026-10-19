@@ -1,5 +1,6 @@
-/// A JSON value: what `Media.ext` holds (SDK.md §9.7) and what `parseMedia` reads. `description` is its compact JSON
-/// text, members sorted by name.
+/// A JSON value, as `Media.ext` holds it (SDK.md §9.7) and `parseMedia` reads it.
+///
+/// `description` is the value's compact JSON text, with object members sorted by name.
 public enum JSONValue: Hashable, Sendable {
     case null
     case bool(Bool)
@@ -11,8 +12,8 @@ public enum JSONValue: Hashable, Sendable {
 
     /// Parses JSON text.
     ///
-    /// - Throws: `PartyError` `invalid_message` when `text` isn't JSON, or holds an unpaired surrogate escape
-    ///   (`"\ud800"`), which a Swift `String` can't hold.
+    /// - Throws: `PartyError` with code `invalid_message` when `text` isn't JSON. It also throws when `text` holds an
+    ///   unpaired surrogate escape such as `"\ud800"`, which a Swift `String` can't hold.
     public init(parsing text: String) throws {
         guard let json = JSON.parse(text) else { throw PartyError(.invalidMessage, "not JSON text") }
         if json.holdsUnpaired { throw PartyError(.invalidMessage, "the text holds an unpaired surrogate") }
@@ -50,6 +51,8 @@ extension JSONValue: ExpressibleByNilLiteral, ExpressibleByBooleanLiteral, Expre
     public init(stringLiteral value: String) { self = .string(value) }
     public init(arrayLiteral elements: JSONValue...) { self = .array(elements) }
 
+    /// Creates an object from a dictionary literal.
+    ///
     /// A repeated name keeps its last value.
     public init(dictionaryLiteral elements: (String, JSONValue)...) {
         self = .object(Dictionary(elements, uniquingKeysWith: { _, last in last }))

@@ -1,6 +1,13 @@
-/// Whether two descriptors name the same title (SDK.md §9.3): equal kinds and a shared v1 ID; for an episode its own
-/// ID, or, when no v1 namespace holds two different own IDs, a shared series ID with equal season and episode; for a
-/// video the same file. Symmetric.
+/// Whether two descriptors name the same title (SDK.md §9.3).
+///
+/// Two descriptors name the same title only when their kinds are equal. Then the rule depends on the kind:
+///
+/// - Two movies match when they share a v1 ID.
+/// - Two episodes match when they share a v1 ID of their own. Failing that, they match when they share a series ID and
+///   have equal season and episode numbers, unless a v1 namespace holds two different IDs of their own.
+/// - Two videos match when they are the same file.
+///
+/// The rule is symmetric, so the order of `a` and `b` doesn't matter.
 public func sameTitle(_ a: Media, _ b: Media) -> Bool {
     guard a.kind == b.kind else { return false }
     switch a.kind {

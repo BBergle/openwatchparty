@@ -20,9 +20,11 @@ func normalizeCode(_ input: String) -> String? {
     return out.count == Owp.codeLength ? String(out) : nil
 }
 
-/// `code`, as typed or pasted, normalized and shown in two groups: `K7M-Q2X` (SDK.md §4.1).
+/// Formats a room code for display, such as `K7M-Q2X` (SDK.md §4.1).
 ///
-/// - Throws: `PartyError` `invalid_code` when `code` isn't a room code.
+/// `code` may be typed or pasted. The function normalizes it and shows it in two groups.
+///
+/// - Throws: `PartyError` with code `invalid_code` when `code` isn't a room code.
 public func formatCode(_ code: String) throws -> String {
     guard let c = normalizeCode(code) else { throw PartyError(.invalidCode, "not a room code") }
     return String(c.prefix(3)) + "-" + String(c.suffix(3))

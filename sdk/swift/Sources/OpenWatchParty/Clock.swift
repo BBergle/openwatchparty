@@ -1,19 +1,25 @@
 import Foundation
 
-/// Local time and timers (SDK.md §2, §16.8): milliseconds of a monotonic clock, never wall-clock time, and one-shot
-/// timers on the main actor. The party and `Relays` measure and wait only through it, so a test passes a virtual clock
-/// and drives every timer of the SDK.
+/// Local time and timers for the SDK (SDK.md §2, §16.8).
+///
+/// A clock gives milliseconds of a monotonic clock, never wall-clock time, and one-shot timers on the main actor.
+///
+/// The party and `Relays` measure and wait only through their clock. A test can therefore pass a virtual clock and
+/// drive every timer of the SDK.
 @MainActor
 public protocol PartyClock: AnyObject {
-    /// Milliseconds on a monotonic clock that a wall-clock step never moves.
+    /// The current time in milliseconds on a monotonic clock, which a wall-clock step never moves.
     func nowMs() -> Int64
 
-    /// Runs `action` on the main actor once `delayMs` ms have passed, always later than the call, unless the returned
-    /// function, which cancels the timer, runs first. The SDK never asks for more than 2147483647 ms (SDK.md §2).
+    /// Runs `action` on the main actor once `delayMs` milliseconds have passed.
+    ///
+    /// The action always runs later than the call. The SDK never asks for a delay over 2147483647 ms (SDK.md §2).
+    ///
+    /// - Returns: A function that cancels the timer. When it runs first, `action` never runs.
     func schedule(afterMs delayMs: Int64, _ action: @escaping @MainActor () -> Void) -> @MainActor () -> Void
 }
 
-/// The default clock: `ContinuousClock` for time, `Task.sleep` for timers.
+/// The default clock, which uses `ContinuousClock` for time and `Task.sleep` for timers.
 @MainActor
 public final class SystemClock: PartyClock {
     private let clock = ContinuousClock()

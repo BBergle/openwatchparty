@@ -2,7 +2,7 @@
 public enum MediaKind: String, Hashable, Sendable, CaseIterable {
     case movie
     case episode
-    /// A file with no catalogue identity: a home video, a recording, a clip.
+    /// A file with no catalogue identity, such as a home video, a recording or a clip.
     case video
 }
 
@@ -10,7 +10,9 @@ public enum MediaKind: String, Hashable, Sendable, CaseIterable {
 public struct Series: Hashable, Sendable {
     public var title: String
     public var year: Int64?
-    /// Namespace → the series' ID (`imdb`, `tmdb`, `tvdb`, `plex`, `anilist`, `anidb`, `kitsu`, `mal`).
+    /// The series' IDs, keyed by namespace.
+    ///
+    /// The v1 namespaces are `imdb`, `tmdb`, `tvdb`, `plex`, `anilist`, `anidb`, `kitsu` and `mal`.
     public var ids: [String: String]
 
     public init(title: String, year: Int64? = nil, ids: [String: String] = [:]) {
@@ -20,12 +22,14 @@ public struct Series: Hashable, Sendable {
     }
 }
 
-/// File hints that pick the same release among candidates.
+/// File hints that pick out the same release among the candidates.
 public struct MediaFile: Hashable, Sendable {
     public var sizeBytes: Int64?
-    /// The OpenSubtitles hash: 16 lower-case hex digits.
+    /// The OpenSubtitles hash, as 16 lower-case hex digits.
     public var oshash: String?
-    /// The file name: no directories (`/`, `\`), no forbidden characters, not `.` or `..`. A hint, never a path.
+    /// The file name, which is a hint and never a path.
+    ///
+    /// The name holds no directories, so no `/` or `\`, and no forbidden characters. It is not `.` or `..`.
     public var name: String?
 
     public init(sizeBytes: Int64? = nil, oshash: String? = nil, name: String? = nil) {
@@ -35,24 +39,33 @@ public struct MediaFile: Hashable, Sendable {
     }
 }
 
-/// The media descriptor (SPEC.md §10): the title the room plays. Positions are in the timeline of the reference file,
-/// whose duration is `durationMs`. A value type: the party's copy never changes with the app's.
+/// The media descriptor, which names the title the room plays (SPEC.md §10).
+///
+/// Positions are in the timeline of the reference file, whose duration is `durationMs`.
+///
+/// `Media` is a value type, so the party's copy never changes when the app changes its own.
 public struct Media: Hashable, Sendable {
     public var kind: MediaKind
     /// The movie's or episode's title, or the video's.
     public var title: String
-    /// The reference file's duration: 1 to 604800000 (7 days).
+    /// The reference file's duration in milliseconds, from 1 to 604800000, which is 7 days.
     public var durationMs: Int64
     public var year: Int64?
-    /// Namespace → ID; for an episode, the episode's own IDs.
+    /// The title's IDs, keyed by namespace.
+    ///
+    /// For an episode, these are the episode's own IDs.
     public var ids: [String: String]
-    /// Required for an episode.
+    /// The episode's series, which an episode requires.
     public var series: Series?
-    /// As the setter's source numbers it (0 for specials).
+    /// The season number, as the setter's source numbers it.
+    ///
+    /// Specials are season 0.
     public var season: Int64?
     public var episode: Int64?
     public var file: MediaFile?
-    /// App-private hints keyed by a reverse-DNS app name (`com.example`, `org.example`); at most 1024 bytes.
+    /// App-private hints, keyed by a reverse-DNS app name such as `com.example` or `org.example`.
+    ///
+    /// The hints take at most 1024 bytes.
     public var ext: [String: JSONValue]?
 
     public init(
@@ -79,7 +92,7 @@ public struct Media: Hashable, Sendable {
         self.ext = ext
     }
 
-    /// The descriptor as sent in `setMedia`.
+    /// The descriptor as the party sends it in `setMedia`.
     public func toJSON() -> JSONValue {
         var o: [String: JSONValue] = ["kind": .string(kind.rawValue), "title": .string(title)]
         if let year { o["year"] = .number(Double(year)) }
@@ -138,12 +151,18 @@ public struct Media: Hashable, Sendable {
     func sameDescriptor(as other: Media) -> Bool { wireText.utf8.elementsEqual(other.wireText.utf8) }
 }
 
-/// Reads a descriptor with the receive checks of SDK.md §9.7, as the SDK reads `media` and `joined`: unknown members
-/// are dropped, unknown `ids` namespaces and all of `ext` are kept, and the sizes aren't checked. Descriptors come from
-/// other participants: treat every string as untrusted text.
+/// Reads a descriptor with the receive checks of SDK.md §9.7.
 ///
-/// - Throws: `PartyError` `invalid_message` when `json` isn't an object, a member has the wrong type, a required one
-///   is missing, or a value breaks a rule of `checkMedia` other than the sizes.
+/// The function reads a descriptor the way the SDK reads `media` and `joined`:
+///
+/// - It drops unknown members.
+/// - It keeps unknown `ids` namespaces and all of `ext`.
+/// - It doesn't check the sizes.
+///
+/// Descriptors come from other participants, so treat every string in one as untrusted text.
+///
+/// - Throws: `PartyError` with code `invalid_message` when `json` isn't an object, a member has the wrong type, a
+///   required member is missing, or a value breaks a rule of `checkMedia` other than the sizes.
 public func parseMedia(_ json: JSONValue) throws -> Media {
     guard case .object(let o) = json, let read = readMedia(o.mapValues(JSON.init)) else {
         throw PartyError(.invalidMessage, "the descriptor misses a member or has one of the wrong type")
@@ -224,11 +243,25 @@ func readMedia(_ o: [String: JSON]) -> (media: Media, unpaired: Bool)? {
     return (media, unpaired)
 }
 
-/// Nil when `media` passes the send checks of SDK.md §9.7, else the first rule it breaks: `title`, `durationMs` (1 to
-/// 604800000, 7 days), `series` for an episode, number ranges, `oshash`, `file.name` (no `/`, `\` or forbidden
-/// character, not `.` or `..`), IDs, `ext` names and numbers, then 1024 bytes of `ext` and 4096 bytes in all, measured
-/// on the SDK's compact JSON. An app trims `file.name` or `ext` and checks again. A Swift `String` can't hold an
-/// unpaired surrogate, so no `Media` breaks that rule.
+/// Checks a descriptor with the send checks of SDK.md §9.7.
+///
+/// The checks run in this order:
+///
+/// 1. `title`.
+/// 2. `durationMs`, which is 1 to 604800000, or 7 days.
+/// 3. `series`, which an episode needs.
+/// 4. Number ranges.
+/// 5. `oshash`.
+/// 6. `file.name`, which holds no `/`, `\` or forbidden character, and is not `.` or `..`.
+/// 7. IDs.
+/// 8. `ext` member names and numbers.
+/// 9. The sizes: at most 1024 bytes of `ext`, and 4096 bytes in all, measured on the SDK's compact JSON.
+///
+/// When a descriptor is too large, the app trims `file.name` or `ext` and checks again.
+///
+/// A Swift `String` can't hold an unpaired surrogate, so no `Media` breaks that rule.
+///
+/// - Returns: Nil when `media` passes the checks, or else the first rule it breaks.
 public func checkMedia(_ media: Media) -> String? { mediaProblem(media, sizes: true) }
 
 /// The rules of SDK.md §9.7 on a descriptor's values; the sizes only when `sizes` (on send).

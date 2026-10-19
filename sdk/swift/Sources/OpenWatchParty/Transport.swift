@@ -3,25 +3,31 @@ import Foundation
 import FoundationNetworking
 #endif
 
-/// One WebSocket of text messages (SDK.md §16.8). The party calls it on the main actor only.
+/// One WebSocket of text messages (SDK.md §16.8).
+///
+/// The party calls it on the main actor only.
 @MainActor
 public protocol WebSocketConnection: AnyObject, Sendable {
-    /// The next text message; nil once the connection has ended, by either side or by a failure. Binary messages are
-    /// skipped.
+    /// Receives the next text message.
+    ///
+    /// Binary messages are skipped.
+    ///
+    /// - Returns: The message, or nil once the connection has ended, by either side or by a failure.
     func receive() async -> String?
-    /// The close status once `receive` returned nil; nil when the connection ended without one.
+    /// The close status once `receive` has returned nil, or nil when the connection ended without one.
     func closeCode() async -> Int?
     func send(_ text: String)
-    /// Closes with `code`; nothing more arrives.
+    /// Closes the connection with `code`, after which nothing more arrives.
     func close(code: Int)
 }
 
-/// Opens a WebSocket to a relay's URL (`wss://…/v1/ws`) and returns once it is open; throws when the connection fails,
-/// HTTP 429 and 503 included. It should stop when its task is cancelled; the party gives up after 10 s regardless,
-/// and closes a connection that opens later.
+/// Opens a WebSocket to a relay's URL, such as `wss://…/v1/ws`, and returns once it is open.
+///
+/// The function throws when the connection fails, including on HTTP 429 and 503. It should stop when its task is
+/// cancelled. The party gives up after 10 seconds regardless, and closes a connection that opens later.
 public typealias WebSocketConnect = @MainActor (_ url: String) async throws -> any WebSocketConnection
 
-/// The default `WebSocketConnect`: a `URLSessionWebSocketTask`.
+/// The default `WebSocketConnect`, which uses a `URLSessionWebSocketTask`.
 @MainActor
 public func urlSessionConnect(_ url: String) async throws -> any WebSocketConnection {
     try await URLSessionConnection.open(url)
@@ -201,8 +207,10 @@ private final class SocketEvents: NSObject, URLSessionWebSocketDelegate, @unchec
     }
 }
 
-/// The default `HTTPGet` (SDK.md §3.4): `URLSession`, no redirects, status 200 only, at most 65536 bytes of UTF-8
-/// body, stopped when its task is cancelled.
+/// The default `HTTPGet`, which uses `URLSession` (SDK.md §3.4).
+///
+/// It follows no redirects and accepts status 200 only. It reads at most 65536 bytes of UTF-8 body, and stops when its
+/// task is cancelled.
 @MainActor
 public func urlSessionGet(_ url: String) async throws -> String {
     guard let target = URL(string: url) else { throw PartyError(.unreachable, "not a URL: \(url)") }

@@ -1,4 +1,6 @@
-/// One relay of a list (SPEC.md §5.2): `prefixes` are the first symbols of the codes it owns.
+/// One relay of a relay list (SPEC.md §5.2).
+///
+/// `prefixes` holds the first symbols of the room codes the relay owns.
 public struct Relay: Hashable, Sendable {
     public let id: String
     public let name: String
@@ -13,14 +15,21 @@ public struct Relay: Hashable, Sendable {
     }
 }
 
-/// The app's HTTP GET for list refreshes (SDK.md §3.4, §16.8): the body of a status 200 answer as text; it throws for
-/// any other status or a failed connection. It must follow no redirect and stop when its task is cancelled; the SDK
-/// gives up after 5 s regardless, and refuses a body over 65536 bytes of UTF-8.
+/// The app's HTTP GET for relay list refreshes (SDK.md §3.4, §16.8).
+///
+/// The function returns the body of a status 200 answer as text. It throws for any other status or for a failed
+/// connection.
+///
+/// It must follow no redirect, and stop when its task is cancelled. The SDK gives up after 5 seconds regardless, and
+/// refuses a body over 65536 bytes of UTF-8.
 public typealias HTTPGet = @MainActor (_ url: String) async throws -> String
 
-/// The relays a party creates and joins rooms on (SDK.md §3): the public relays, refreshed only from
-/// `https://openwatch.party/relays.json`, or one self-hosted relay. An app keeps one and passes it to every party; the
-/// list and its refresh schedule belong to it.
+/// The relays a party creates and joins rooms on (SDK.md §3).
+///
+/// A `Relays` holds either the public relays, refreshed only from `https://openwatch.party/relays.json`, or one
+/// self-hosted relay.
+///
+/// An app keeps one `Relays` and passes it to every party. The list and its refresh schedule belong to the `Relays`.
 @MainActor
 public final class Relays {
     /// The GET of the public list's refreshes; nil for a self-hosted relay, which has no source.
@@ -41,8 +50,8 @@ public final class Relays {
     /// The public relays, starting from the list compiled into the SDK.
     ///
     /// - Parameters:
-    ///   - httpGet: the GET for refreshes; by default `URLSession` without redirects.
-    ///   - clock: local time and timers; tests pass a virtual one.
+    ///   - httpGet: The GET for refreshes. The default uses `URLSession` without redirects.
+    ///   - clock: Local time and timers. Tests pass a virtual clock.
     public static func `public`(httpGet: HTTPGet? = nil, clock: PartyClock = SystemClock()) -> Relays {
         Relays(
             list: parseRelayList(JSON.parse(publicRelaysJSON))!,
@@ -51,12 +60,15 @@ public final class Relays {
         )
     }
 
-    /// The one self-hosted relay at `baseUrl` (`https://relay.example.com`, `http://192.168.1.5:8080/owp`), for every
-    /// room: its WebSocket URL is the base with `https://` → `wss://` or `http://` → `ws://`, plus `/v1/ws`. Nothing is
-    /// fetched, and `refresh()` does nothing.
+    /// One self-hosted relay at `baseUrl`, used for every room.
     ///
-    /// - Throws: `PartyError` `invalid_message` when `baseUrl`, without trailing `/`s, isn't `https://` or `http://`
-    ///   followed by a host, or makes a WebSocket URL that SDK.md §3.2 refuses.
+    /// `baseUrl` is the relay's base URL, such as `https://relay.example.com` or `http://192.168.1.5:8080/owp`. The
+    /// WebSocket URL is the base with `https://` replaced by `wss://`, or `http://` by `ws://`, plus `/v1/ws`.
+    ///
+    /// Nothing is fetched, and `refresh()` does nothing.
+    ///
+    /// - Throws: `PartyError` with code `invalid_message` when `baseUrl`, without trailing slashes, isn't `https://` or
+    ///   `http://` followed by a host. It also throws when the result is a WebSocket URL that SDK.md §3.2 refuses.
     public static func at(_ baseUrl: String) throws -> Relays {
         var base = Substring(baseUrl)
         while base.hasSuffix("/") { base = base.dropLast() }
@@ -73,14 +85,20 @@ public final class Relays {
         return Relays(list: [relay], get: nil, clock: SystemClock())
     }
 
-    /// The list in use.
+    /// The relay list in use.
     public var list: [Relay] { current }
 
-    /// The relay that owns `code`, normalized first; nil for an invalid code or a symbol nobody owns. Never refreshes.
+    /// The relay that owns `code`, or nil.
+    ///
+    /// The function normalizes `code` first. It returns nil for an invalid code, or for a code whose first symbol no
+    /// relay owns. It never refreshes the list.
     public func relayFor(_ code: String) -> Relay? { normalizeCode(code).flatMap { route($0, current) } }
 
-    /// A forced refresh (SDK.md §3.3); false when the public list's source gave no valid list. A self-hosted relay has
-    /// nothing to refresh: true at once.
+    /// Forces a refresh of the public list (SDK.md §3.3).
+    ///
+    /// A self-hosted relay has nothing to refresh, so the call returns true at once.
+    ///
+    /// - Returns: False when the public list's source gave no valid list.
     @discardableResult
     public func refresh() async -> Bool {
         guard get != nil else { return true }
