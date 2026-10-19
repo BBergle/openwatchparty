@@ -223,10 +223,10 @@ final class HTTPServer: @unchecked Sendable {
             close(fd)
             throw TestFailure("port \(port) is taken")
         }
-        let fd = fd
+        let listener = fd
         Thread.detachNewThread { [self] in
             while true {
-                let client = accept(fd, nil, nil)
+                let client = accept(listener, nil, nil)
                 if lock.withLock({ stopping }) || client < 0 {
                     if client >= 0 { close(client) }
                     break
