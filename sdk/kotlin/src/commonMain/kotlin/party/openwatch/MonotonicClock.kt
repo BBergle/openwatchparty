@@ -3,8 +3,12 @@ package party.openwatch
 import kotlin.time.TimeSource
 
 /**
- * Local time in milliseconds for everything the SDK measures: ping round trips, timers' deadlines, the time since a
- * seek. Monotonic: a wall-clock step never moves it. Tests pass a virtual clock that follows their scheduler.
+ * Local time in milliseconds, for everything the SDK measures.
+ *
+ * The SDK measures ping round trips, timer deadlines and the time since a seek with it. The clock is monotonic: a
+ * wall-clock step never moves it.
+ *
+ * Tests pass a virtual clock that follows their scheduler.
  */
 public fun interface MonotonicClock {
     public fun nowMs(): Long

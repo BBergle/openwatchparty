@@ -32,20 +32,21 @@ import kotlin.math.min
 import kotlin.random.Random
 
 /**
- * One participant's session (SDK.md §16.2): the connection to the room's relay, the room state, matching the room's
- * media to the user's own file through [Resolver], `status` reports, and driving the attached [PlayerAdapter] so it
- * follows the room.
+ * One participant's session (SDK.md §16.2).
+ *
+ * The party holds the connection to the room's relay and the room state. It matches the room's media to the user's own
+ * file through the [Resolver], sends `status` reports, and drives the attached [PlayerAdapter] so it follows the room.
  *
  * The party runs in a child [SupervisorJob] of [scope], on its dispatcher, and calls the adapter and the resolver
- * there. Use a single-threaded scope (Android: a Main scope) and call the party from that thread.
+ * there. Use a single-threaded scope, such as a Main scope on Android, and call the party from that thread.
  *
- * @param client the app's `<name>/<version>` (`Example/1.0`), shown to everyone and used by the relay's terms;
- *   1–64 characters.
- * @param name the user's display name, 1–32 characters.
- * @param resolver finds the user's files for other participants' media; without one the party never searches, and
- *   their media has no candidates and is unavailable from the start of its epoch.
- * @throws PartyException `invalid_message` when [client] or [name] breaks SPEC.md §6.3 (lengths in code points, no
- *   forbidden characters, the `<app>/<version>` shape) or holds an unpaired surrogate.
+ * @param client the app's `<app>/<version>`, such as `Example/1.0`, from 1 to 64 characters. Everyone sees it, and
+ *   the relay's terms use it.
+ * @param name the user's display name, from 1 to 32 characters.
+ * @param resolver finds the user's files for other participants' media. Without a resolver, the party never searches.
+ *   Other participants' media then has no candidates, and it is unavailable from the start of its epoch.
+ * @throws PartyException `invalid_message` when [client] or [name] breaks SPEC.md §6.3 or holds an unpaired surrogate.
+ *   SPEC.md §6.3 counts lengths in code points, forbids some characters, and requires the `<app>/<version>` shape.
  */
 public class WatchParty<T> internal constructor(
     private val relays: Relays,
@@ -79,13 +80,17 @@ public class WatchParty<T> internal constructor(
     private val _state = MutableStateFlow(PartyState<T>())
     private val _events = MutableSharedFlow<PartyEvent>(extraBufferCapacity = Channel.UNLIMITED)
 
-    /** Everything the UI shows. Changes on events, never per tick. */
+    /** Everything the UI shows, which changes on events, never per tick. */
     public val state: StateFlow<PartyState<T>> = _state.asStateFlow()
 
     /**
-     * Actions, participants coming and going, refusals, resolver failures, a player that refused to start and the end
-     * (SDK.md §15). Never drops: every subscriber gets every event emitted while it is subscribed, in order, however
-     * slowly it reads.
+     * What happens in the room, as events (SDK.md §15).
+     *
+     * The events report actions, participants coming and going, refusals, resolver failures, a player that refused to
+     * start, and the end of the party.
+     *
+     * The flow never drops an event. Every subscriber gets every event emitted while it is subscribed, in order,
+     * however slowly it reads.
      */
     public val events: SharedFlow<PartyEvent> = _events.asSharedFlow()
 
@@ -179,9 +184,11 @@ public class WatchParty<T> internal constructor(
     // -- Create and join ----------------------------------------------------------------------------------------------
 
     /**
-     * Creates a room and returns its code (SDK.md §6). With several relays it creates on the first that answers a ping.
-     * A relay that answers `relay_full` passes `create` on to the next relay in list order that it hasn't gone to yet;
-     * when every relay is full, it fails with the last `relay_full`.
+     * Creates a room and returns its code (SDK.md §6).
+     *
+     * With several relays, the party creates the room on the first relay that answers a ping. When a relay answers
+     * `relay_full`, the party passes `create` on to the next relay in list order that it hasn't gone to yet. When every
+     * relay is full, the call fails with the last `relay_full`.
      */
     public suspend fun create(): String = attempt { myGeneration ->
         val list = relays.list
@@ -250,8 +257,10 @@ public class WatchParty<T> internal constructor(
     }
 
     /**
-     * Joins the room [code], typed or pasted (`k7m-q2x` works), on the relay that owns it (SDK.md §4). The code is
-     * checked first: `invalid_code` before `already_in_room`.
+     * Joins the room [code] on the relay that owns it (SDK.md §4).
+     *
+     * [code] may be typed or pasted, so `k7m-q2x` works too. The party checks the code first, so `invalid_code` comes
+     * before `already_in_room`.
      */
     public suspend fun join(code: String) {
         requireOpen()
@@ -699,7 +708,7 @@ public class WatchParty<T> internal constructor(
         emptyList()
     }
 
-    /** Plays the offered file: `match` becomes mismatched (SDK.md §9.6). */
+    /** Plays the offered file, and `match` becomes mismatched (SDK.md §9.6). */
     public fun acceptMismatch() {
         val offered = mismatch ?: return
         choice = offered.candidate
@@ -711,7 +720,11 @@ public class WatchParty<T> internal constructor(
         requestStatus()
     }
 
-    /** Doesn't play the offered file: `match` becomes unavailable and the room stops waiting for this user. */
+    /**
+     * Declines the offered file, which then doesn't play.
+     *
+     * `match` becomes unavailable, and the room stops waiting for this user.
+     */
     public fun declineMismatch() {
         val offered = mismatch ?: return
         match = Match(MatchState.UNAVAILABLE, offered.deltaMs)
@@ -724,11 +737,19 @@ public class WatchParty<T> internal constructor(
     }
 
     /**
-     * Takes a file the user picked by hand (SDK.md §9.6), probing it when it has no duration: [candidate] becomes the
-     * choice, also when it has the current choice's id (a refreshed `ref` replaces the old one). False when the room
-     * has no media, the file has no duration (1 ms to 7 days) and no probe, or the probe fails; then nothing changes.
-     * The latest call wins: an earlier one still probing is cancelled and returns false, and so is one when matching
-     * is cancelled (a new epoch, [resolveAgain], the end).
+     * Takes a file the user picked by hand (SDK.md §9.6), probing it when it has no duration.
+     *
+     * [candidate] becomes the choice, also when it has the current choice's id. A refreshed `ref` then replaces the old
+     * one.
+     *
+     * Returns false, and changes nothing, when any of these holds:
+     *
+     * - The room has no media.
+     * - The file has no duration (1 ms to 7 days) and no probe.
+     * - The probe fails.
+     *
+     * The latest call wins. An earlier call that is still probing is cancelled and returns false. So is a call that is
+     * probing when matching is cancelled, by a new epoch, by [resolveAgain] or by the end of the party.
      */
     public suspend fun choose(candidate: Candidate<T>): Boolean = withContext(dispatcher) {
         val target = media ?: return@withContext false
@@ -764,10 +785,15 @@ public class WatchParty<T> internal constructor(
     }
 
     /**
-     * Asks the resolver again for the current media (SDK.md §9.1), keeping what plays: the offset and the adapter stay
-     * as they are. Without a choice, matching starts over (the resolver and the walk). With one, only
-     * the resolver and the ranking run, and their result replaces `state.candidates` for [choose]; the choice and the
-     * match stay. Nothing without media or in an own-media epoch.
+     * Asks the resolver again for the current media (SDK.md §9.1).
+     *
+     * It keeps what plays: the offset and the adapter stay as they are.
+     *
+     * - Without a choice, matching starts over, with the resolver and the walk.
+     * - With a choice, only the resolver and the ranking run. Their result replaces `state.candidates`, for [choose].
+     *   The choice and the match stay.
+     *
+     * It does nothing without media, or in an epoch of the party's own media.
      */
     public fun resolveAgain() {
         val target = media ?: return
@@ -789,14 +815,25 @@ public class WatchParty<T> internal constructor(
     // -- The player (SDK.md §10.2, §11) -------------------------------------------------------------------------------
 
     /**
-     * The user's player [player] has the file [ref] open: normally `state.choice.ref` as published, or as host the
-     * `ref` passed to [setMedia]. The party follows the room on it (binds it) whenever [ref] equals the choice's `ref`,
-     * the match is matched or mismatched and no `setMedia` of this party is pending (SDK.md §10.2), and it re-checks
-     * that on every change: attach once per file the player opens. A file opened for a choice that has since changed
-     * stays unbound. Attaching another adapter releases this one as [detachPlayer] does; attaching the same one again
-     * replaces its ref and keeps its queued commands. It works while idle or ended too: the adapter stays attached into
-     * the session the next [create] or [join] starts, also when an attempt fails. The party's end releases
-     * it, so an app whose player still has its file open after [PartyEvent.Ended] attaches it again.
+     * Tells the party that the user's [player] has the file [ref] open.
+     *
+     * [ref] is normally `state.choice.ref` as published. As host, it can also be the `ref` passed to [setMedia].
+     *
+     * The party follows the room on the player, which is called binding it (SDK.md §10.2). It binds the player whenever
+     * all of these hold, and it re-checks them on every change:
+     *
+     * - [ref] equals the choice's `ref`.
+     * - The match is matched or mismatched.
+     * - No `setMedia` of this party is pending.
+     *
+     * So attach once per file the player opens. A file opened for a choice that has since changed stays unbound.
+     *
+     * Attaching another adapter releases the attached one, as [detachPlayer] does. Attaching the same adapter again
+     * replaces its ref and keeps its queued commands.
+     *
+     * Attaching works while the party is idle or ended too. The adapter stays attached into the session that the next
+     * [create] or [join] starts, also when that attempt fails. The party's end releases the adapter, so an app whose
+     * player still has its file open after [PartyEvent.Ended] attaches it again.
      */
     public fun attachPlayer(player: PlayerAdapter, ref: T) {
         val old = adapter
@@ -816,13 +853,16 @@ public class WatchParty<T> internal constructor(
     }
 
     /**
-     * The user left the player: the room stops waiting for this user. Without [player] it releases the attached
-     * adapter; with it, only when [player] is the one attached, and otherwise nothing changes. A released adapter's
-     * commands that haven't started are dropped, and while the SDK was nudging it gets the room's rate back once
-     * (SDK.md §11.2).
+     * Tells the party that the user left the player, so the room stops waiting for this user.
      *
-     * @return completes once no released adapter has a command queued or running, at once when none has; never fails.
-     *   Join it before disposing the player.
+     * Without [player], this releases the attached adapter. With [player], it does so only when [player] is the one
+     * attached. Otherwise nothing changes.
+     *
+     * A released adapter's commands that haven't started are dropped. If the SDK was nudging the adapter, the adapter
+     * gets the room's rate back once (SDK.md §11.2).
+     *
+     * @return a job that completes once no released adapter has a command queued or running, or at once when none
+     *   has. It never fails. Join it before disposing of the player.
      */
     public fun detachPlayer(player: PlayerAdapter? = null): Job {
         if (player == null || player === adapter) {
@@ -835,7 +875,11 @@ public class WatchParty<T> internal constructor(
         return released()
     }
 
-    /** The player's state changed (optional; otherwise the SDK sees it on the next tick). */
+    /**
+     * Tells the party that the player's state changed.
+     *
+     * Calling this is optional. Without it, the SDK sees the change on the next tick.
+     */
     public fun playerChanged() {
         updatePlayer()
         publish()
@@ -1148,13 +1192,17 @@ public class WatchParty<T> internal constructor(
 
     // -- Local commands (SDK.md §12) ----------------------------------------------------------------------------------
 
-    /** Asks the room to play; it starts everyone together. */
+    /** Asks the room to play, and the room starts everyone together. */
     public fun play() {
         requireController()
         send(Out.play())
     }
 
-    /** Pauses the room; the bound player pauses at once, and its position (in the reference timeline) goes along. */
+    /**
+     * Pauses the room.
+     *
+     * The bound player pauses at once, and the pause carries its position, in the reference timeline.
+     */
     public fun pause() {
         requireController()
         val player = adapter?.takeIf { bound }
@@ -1164,7 +1212,7 @@ public class WatchParty<T> internal constructor(
         send(Out.pause(position))
     }
 
-    /** Seeks the room; [positionMs] is in the user's own file. */
+    /** Seeks the room to [positionMs], a position in the user's own file. */
     public fun seek(positionMs: Long) {
         requireController()
         if (positionMs < 0) throw PartyException(PartyException.INVALID_MESSAGE, "positionMs is negative")
@@ -1192,7 +1240,7 @@ public class WatchParty<T> internal constructor(
         return maxOf(0L, positionMs - offsetMs)
     }
 
-    /** Sets the room's rate, 0.5 to 2.0. The bound player plays at [rate]. */
+    /** Sets the room's rate, from 0.5 to 2.0, and the bound player plays at [rate]. */
     public fun setRate(rate: Double) {
         requireController()
         if (!(rate >= Owp.MIN_RATE && rate <= Owp.MAX_RATE)) throw PartyException(PartyException.INVALID_MESSAGE, "rate is outside 0.5–2.0")
@@ -1205,8 +1253,10 @@ public class WatchParty<T> internal constructor(
     }
 
     /**
-     * Local position = room position + [offsetMs], for a file that differs from the reference (SDK.md §13). At most
-     * 604800000 (7 days) either way; anything else throws `invalid_message` and changes nothing.
+     * Sets the offset for a file that differs from the reference (SDK.md §13).
+     *
+     * The local position is the room position plus [offsetMs]. The offset is at most 604800000 (7 days) either way.
+     * Any other value throws `invalid_message` and changes nothing.
      */
     public fun setOffset(offsetMs: Long) {
         if (offsetMs !in -Owp.MAX_OFFSET_MS..Owp.MAX_OFFSET_MS) {
@@ -1220,11 +1270,15 @@ public class WatchParty<T> internal constructor(
     }
 
     /**
-     * Shares [media] with the room (host), starting at [positionMs] of the host's own file. [ref] is the app's value
-     * that reopens that file. Whenever the room plays [media], also after this party hands over host, `state.choice`
-     * is a candidate with id `""`, [ref] and the descriptor's duration (SDK.md §9.1): the app opens it like any choice,
-     * and a player already attached with [ref] binds without reopening. The party keeps its own copy of [media]:
-     * changing the app's maps or JSON afterwards changes nothing.
+     * Shares [media] with the room, as host.
+     *
+     * The room starts at [positionMs] of the host's own file. [ref] is the app's value that reopens that file.
+     *
+     * Whenever the room plays [media], also after this party hands over host, `state.choice` is a candidate with the
+     * id `""`, [ref] and the descriptor's duration (SDK.md §9.1). The app opens it like any choice. A player already
+     * attached with [ref] binds without reopening.
+     *
+     * The party keeps its own copy of [media], so changing the app's maps or JSON afterwards changes nothing.
      */
     public fun setMedia(media: Media, ref: T, positionMs: Long = 0) {
         requireMember()
@@ -1275,7 +1329,11 @@ public class WatchParty<T> internal constructor(
         send(Out.lock(locked))
     }
 
-    /** Ends the room for everyone (host); the party ends when the relay confirms. */
+    /**
+     * Ends the room for everyone, as host.
+     *
+     * The party ends when the relay confirms.
+     */
     public fun end() {
         requireMember()
         requireHost()
@@ -1399,8 +1457,10 @@ public class WatchParty<T> internal constructor(
     // -- Ending -------------------------------------------------------------------------------------------------------
 
     /**
-     * Leaves the room for good; the party ends with [EndReason.LEFT]. During `create` or `join` it cancels them instead
-     * (they fail with `cancelled`) and the party goes back to idle. Nothing outside a room.
+     * Leaves the room for good, and the party ends with [EndReason.LEFT].
+     *
+     * During `create` or `join`, it cancels the call instead. The call fails with `cancelled`, and the party goes back
+     * to idle. Outside a room, it does nothing.
      */
     public fun leave() {
         when (connection) {
@@ -1418,7 +1478,7 @@ public class WatchParty<T> internal constructor(
         }
     }
 
-    /** The room's position now in the reference file's timeline; null without media or a clock sample. */
+    /** The room's position now in the reference file's timeline, or null without media or a clock sample. */
     public fun roomPositionMs(): Long? {
         val room = room ?: return null
         val media = media ?: return null
@@ -1427,12 +1487,15 @@ public class WatchParty<T> internal constructor(
     }
 
     /**
-     * Leaves the room if in one and releases everything, the adapter as [detachPlayer] does; the party can't be used
-     * again. A `create` or `join` that already reached the relay finishes in the background first, to leave the room it
-     * may have joined.
+     * Leaves the room if the party is in one, and releases everything.
      *
-     * @return completes once no released adapter has a command queued or running (a rate restore included); never
-     *   fails. Join it before disposing the player.
+     * The adapter is released as [detachPlayer] releases it. The party can't be used again.
+     *
+     * A `create` or `join` that already reached the relay finishes in the background first, so that the party leaves
+     * the room it may have joined.
+     *
+     * @return a job that completes once no released adapter has a command queued or running, a rate restore included.
+     *   It never fails. Join it before disposing of the player.
      */
     public fun close(): Job {
         if (closed) return released()

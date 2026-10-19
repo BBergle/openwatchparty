@@ -7,9 +7,14 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 
 /**
- * Whether two descriptors name the same title (SDK.md §9.3): equal kinds and a shared v1 ID; for an episode its own
- * ID, or, when no v1 namespace holds two different own IDs, a shared series ID with equal season and episode; for a
- * video the same file.
+ * Whether two descriptors name the same title (SDK.md §9.3).
+ *
+ * The two must have equal kinds. Then the rule depends on the kind:
+ *
+ * - Two movies are the same title when they share a v1 ID.
+ * - Two episodes are the same title when they share a v1 ID of their own. When no v1 namespace holds two different own
+ *   IDs, they are also the same title when they share a series ID and have equal season and episode numbers.
+ * - Two videos are the same title when they are the same file.
  */
 public fun sameTitle(a: Media, b: Media): Boolean {
     if (a.kind != b.kind) return false

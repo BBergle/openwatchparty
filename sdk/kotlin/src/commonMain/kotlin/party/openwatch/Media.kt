@@ -12,7 +12,7 @@ public enum class MediaKind(public val wire: String) {
     MOVIE("movie"),
     EPISODE("episode"),
 
-    /** A file with no catalogue identity: a home video, a recording, a clip. */
+    /** A file with no catalogue identity, such as a home video, a recording or a clip. */
     VIDEO("video"),
     ;
 
@@ -25,7 +25,11 @@ public enum class MediaKind(public val wire: String) {
 public data class Series(
     val title: String,
     val year: Long? = null,
-    /** Namespace → the series' ID (`imdb`, `tmdb`, `tvdb`, `plex`, `anilist`, `anidb`, `kitsu`, `mal`). */
+    /**
+     * The series' IDs, keyed by namespace.
+     *
+     * The v1 namespaces are `imdb`, `tmdb`, `tvdb`, `plex`, `anilist`, `anidb`, `kitsu` and `mal`.
+     */
     val ids: Map<String, String> = emptyMap(),
 )
 
@@ -34,33 +38,46 @@ public data class MediaFile(
     val sizeBytes: Long? = null,
     /** The OpenSubtitles hash: 16 lower-case hex digits. */
     val oshash: String? = null,
-    /** The file name: no directories (`/`, `\`), no forbidden characters, not `.` or `..`. A hint, never a path. */
+    /**
+     * The file name: a hint, never a path.
+     *
+     * It holds no directories, so no `/` or `\`, and no forbidden characters. It is never `.` or `..`.
+     */
     val name: String? = null,
 )
 
 /**
- * The media descriptor (SPEC.md §10): the title the room plays. Positions are in the timeline of the reference file,
- * whose duration is [durationMs].
+ * The media descriptor: the title the room plays (SPEC.md §10).
+ *
+ * Positions are in the timeline of the reference file, whose duration is [durationMs].
  */
 public data class Media(
     val kind: MediaKind,
     /** The movie's or episode's title, or the video's. */
     val title: String,
-    /** The reference file's duration: 1 to 604800000 (7 days). */
+    /** The reference file's duration, from 1 to 604800000 (7 days). */
     val durationMs: Long,
     val year: Long? = null,
-    /** Namespace → ID; for an episode, the episode's own IDs. */
+    /**
+     * The IDs, keyed by namespace.
+     *
+     * For an episode, these are the episode's own IDs.
+     */
     val ids: Map<String, String> = emptyMap(),
-    /** Required for an episode. */
+    /** The episode's series, which an episode requires. */
     val series: Series? = null,
-    /** As the setter's source numbers it (0 for specials). */
+    /** The season number as the setter's source numbers it, with 0 for specials. */
     val season: Long? = null,
     val episode: Long? = null,
     val file: MediaFile? = null,
-    /** App-private hints keyed by a reverse-DNS app name (`com.example`, `org.example`); at most 1024 bytes. */
+    /**
+     * App-private hints, keyed by a reverse-DNS app name such as `com.example` or `org.example`.
+     *
+     * The hints take at most 1024 bytes.
+     */
     val ext: JsonObject? = null,
 ) {
-    /** The descriptor as sent in `setMedia`. */
+    /** Encodes the descriptor as `setMedia` sends it. */
     public fun toJson(): JsonObject = buildJsonObject {
         put("kind", kind.wire)
         put("title", title)
@@ -94,9 +111,13 @@ public data class Media(
 }
 
 /**
- * Reads a descriptor with the receive checks of SDK.md §9.7, as the SDK reads `media` and `joined`: unknown members are
- * dropped, unknown `ids` namespaces and all of `ext` are kept, and the sizes aren't checked. Descriptors come from
- * other participants: treat every string as untrusted text.
+ * Reads a descriptor with the receive checks of SDK.md §9.7, the way the SDK reads `media` and `joined`.
+ *
+ * - Unknown members are dropped.
+ * - Unknown `ids` namespaces and all of `ext` are kept.
+ * - The sizes aren't checked.
+ *
+ * Descriptors come from other participants, so treat every string as untrusted text.
  *
  * @throws PartyException `invalid_message` when [json] isn't an object, a member has the wrong type, a required one is
  *   missing, or a value breaks a rule of [checkMedia] other than the sizes.
@@ -175,11 +196,22 @@ private val OSHASH = Regex("^[0-9a-f]{16}$")
 private val EXT_NAME = Regex("^[a-z0-9-]+(\\.[a-z0-9-]+)+$")
 
 /**
- * Null when [media] passes the send checks of SDK.md §9.7, else the first rule it breaks: `title`, `durationMs` (1 to
- * 604800000, 7 days), `series` for an episode, number ranges, `oshash`, `file.name` (no `/`, `\` or forbidden
- * character, not `.` or `..`), IDs, unpaired UTF-16 surrogates in any string or member name, `ext` names, then
- * 1024 bytes of `ext` and 4096 bytes in all, measured on the SDK's compact JSON. An app trims `file.name` or `ext`
- * and checks again.
+ * Checks [media] against the send checks of SDK.md §9.7, and returns null when it passes.
+ *
+ * Otherwise it returns the first rule the descriptor breaks. The rules are checked in this order:
+ *
+ * 1. The `title`.
+ * 2. The `durationMs`, which is 1 to 604800000 (7 days).
+ * 3. The `series`, which an episode needs.
+ * 4. The ranges of the numbers.
+ * 5. The `oshash`.
+ * 6. The `file.name`, which has no `/`, `\` or forbidden character, and is not `.` or `..`.
+ * 7. The IDs.
+ * 8. Unpaired UTF-16 surrogates, in any string or member name.
+ * 9. The names in `ext`.
+ * 10. The sizes: at most 1024 bytes of `ext` and 4096 bytes in all, measured on the SDK's compact JSON.
+ *
+ * To fix a descriptor, an app trims `file.name` or `ext` and checks again.
  */
 public fun checkMedia(media: Media): String? = mediaProblem(media, sizes = true)
 

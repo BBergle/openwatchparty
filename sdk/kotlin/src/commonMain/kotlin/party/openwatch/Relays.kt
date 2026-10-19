@@ -11,14 +11,23 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 
-/** One relay of a list (SPEC.md §5.2): [prefixes] are the first symbols of the codes it owns. */
+/**
+ * One relay of a relay list (SPEC.md §5.2).
+ *
+ * [prefixes] are the first symbols of the room codes the relay owns.
+ */
 public data class Relay(val id: String, val name: String, val url: String, val prefixes: String)
 
 /**
- * The relays a party connects to (SDK.md §3): the public relays, whose list is refreshed only from
- * `https://openwatch.party/relays.json`, or one self-hosted relay. An app keeps one and passes it to every party; the
- * list and its refresh schedule belong to it. The parties open their WebSockets with [http]; the public list is
- * fetched through a copy of it that follows no redirects.
+ * The relays a party connects to (SDK.md §3).
+ *
+ * It holds either the public relays or one self-hosted relay. The public list is refreshed only from
+ * `https://openwatch.party/relays.json`.
+ *
+ * An app keeps one [Relays] and passes it to every party. The list and its refresh schedule belong to this object.
+ *
+ * The parties open their WebSockets with [http]. The public list is fetched through a copy of [http] that follows no
+ * redirects.
  */
 public class Relays private constructor(
     /** The app's Ktor client, with WebSockets installed. */
@@ -40,12 +49,18 @@ public class Relays private constructor(
     /** The list in use: the public list, or the self-hosted relay alone. */
     public val list: List<Relay> get() = current
 
-    /** The relay that owns [code], normalized first; null for an invalid code or a symbol nobody owns. */
+    /**
+     * Returns the relay that owns [code], after normalizing the code.
+     *
+     * Returns null for an invalid code, or for a code whose first symbol no relay owns.
+     */
     public fun relayFor(code: String): Relay? = normalizeCode(code)?.let { route(it, current) }
 
     /**
-     * A forced refresh of the public list (SDK.md §3.3); false when the source gave no valid list. A self-hosted relay
-     * has no list to refresh: true at once.
+     * Forces a refresh of the public list (SDK.md §3.3).
+     *
+     * Returns false when the source gave no valid list. A self-hosted relay has no list to refresh, so this returns
+     * true at once.
      */
     public suspend fun refresh(): Boolean = custom != null || fetch()
 
@@ -103,9 +118,12 @@ public class Relays private constructor(
         public fun public(http: HttpClient): Relays = public(http, MonotonicClock.System)
 
         /**
-         * The self-hosted relay at [baseUrl] (`https://relay.example.com`, `http://192.168.1.5:8080/owp`), for every room:
-         * its WebSocket URL is the base with `wss://` for `https://` or `ws://` for `http://`, plus `/v1/ws`. Its [list]
-         * is that relay alone, as `custom`, owning every code.
+         * The self-hosted relay at [baseUrl], used for every room.
+         *
+         * Examples of [baseUrl] are `https://relay.example.com` and `http://192.168.1.5:8080/owp`.
+         *
+         * The relay's WebSocket URL is the base with `wss://` in place of `https://`, or `ws://` in place of
+         * `http://`, plus `/v1/ws`. The [list] holds that relay alone, with the id `custom`, and it owns every code.
          *
          * @throws PartyException `invalid_message` when [baseUrl], without trailing `/`s, isn't `https://` or `http://`
          *   followed by a host, or gives a WebSocket URL that SDK.md §3.2 refuses.

@@ -22,7 +22,9 @@ internal fun normalizeCode(input: String): String? {
 }
 
 /**
- * [code], as typed or pasted, normalized and shown in two groups: `K7M-Q2X` (SDK.md §4.1).
+ * Formats a room code for display in two groups, such as `K7M-Q2X` (SDK.md §4.1).
+ *
+ * [code] may be typed or pasted. The function normalizes it first.
  *
  * @throws PartyException `invalid_code` when [code] isn't a room code.
  */

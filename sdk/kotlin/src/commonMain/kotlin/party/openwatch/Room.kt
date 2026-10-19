@@ -33,7 +33,7 @@ public enum class Control(public val wire: String) {
     }
 }
 
-/** A participant's player as reported in `status` (SPEC.md §7.5, SDK.md §10.2). */
+/** A participant's player state, as reported in `status` (SPEC.md §7.5, SDK.md §10.2). */
 public enum class PlayerState(public val wire: String) {
     /** Not in the player. */
     IDLE("idle"),
@@ -41,10 +41,10 @@ public enum class PlayerState(public val wire: String) {
     /** Opening, searching, seeking, or waiting on the user's mismatch choice. */
     LOADING("loading"),
 
-    /** Able to play at once, close enough to the room's position that following it needs no seek. */
+    /** Able to play at once, and close enough to the room's position that following it needs no seek. */
     READY("ready"),
 
-    /** Was playing, now stalled. */
+    /** The player was playing and is now stalled. */
     BUFFERING("buffering"),
     ;
 
@@ -63,7 +63,7 @@ public enum class MatchState(public val wire: String) {
     /** The user plays a file outside that margin, with an offset. */
     MISMATCHED("mismatched"),
 
-    /** No file plays: none found, or the user declined. */
+    /** No file plays, because none was found or the user declined. */
     UNAVAILABLE("unavailable"),
     ;
 
@@ -72,7 +72,11 @@ public enum class MatchState(public val wire: String) {
     }
 }
 
-/** A participant's file for the current media. [deltaMs] is its duration − the media's `durationMs`. */
+/**
+ * How a participant's file matches the current media.
+ *
+ * [deltaMs] is the file's duration minus the media's `durationMs`.
+ */
 public data class Match(val state: MatchState, val deltaMs: Long? = null) {
     internal fun toJson(): JsonObject = buildJsonObject {
         put("state", state.wire)
@@ -101,10 +105,10 @@ public enum class Connection {
     /** A member with an open connection. */
     CONNECTED,
 
-    /** The connection dropped; the SDK is resuming (SDK.md §14). */
+    /** The connection dropped, and the SDK is resuming (SDK.md §14). */
     RECONNECTING,
 
-    /** The party ended ([PartyState.endReason]). */
+    /** The party ended, for the reason in [PartyState.endReason]. */
     ENDED,
 }
 
@@ -125,7 +129,7 @@ public enum class EndReason {
     /** A resume on another connection took this participant over. */
     REPLACED,
 
-    /** Resuming became impossible; [PartyEvent.Ended.error] says why. */
+    /** Resuming became impossible, and [PartyEvent.Ended.error] says why. */
     LOST,
 }
 
@@ -133,7 +137,7 @@ public enum class EndReason {
 public data class Participant(
     val peerId: String,
     val name: String,
-    /** `<app>/<version>`. */
+    /** The participant's app, as `<app>/<version>`. */
     val client: String,
     val host: Boolean,
     val connected: Boolean,
@@ -149,7 +153,11 @@ public data class Room(
     val epoch: Long,
     val phase: Phase,
     val positionMs: Long,
-    /** Relay time; in [Phase.PLAYING], the moment playback runs from [positionMs]. */
+    /**
+     * A relay time.
+     *
+     * In [Phase.PLAYING], it is the moment playback runs from [positionMs].
+     */
     val atMs: Long,
     val rate: Double,
     val control: Control,
