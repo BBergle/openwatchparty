@@ -1,5 +1,3 @@
-# Dart SDK
-
 `openwatchparty` joins a watch party room by its code and keeps your own player in sync with everyone else in it. Each person in the room plays their own copy of the title, and a relay keeps the copies together.
 
 The SDK implements the client behaviour in [`spec/SDK.md`](../../spec/SDK.md). This page names the rules the SDK follows, and SDK.md explains them in full.

@@ -120,13 +120,15 @@ const openOwnerInputRE = /\[OWNER INPUT:(?! …\])/g
 export interface PublishedDoc extends Doc {
   /** Number of `[OWNER INPUT: …]` placeholders left in the file. A page with any is shown as a draft. */
   ownerInputs: number
+  /** Whether the file opens with its own `# ` heading. The package READMEs don't: npm and pub.dev name the package. */
+  hasHeading: boolean
 }
 
 /** Every document, in `docs` order, with its open placeholders counted. */
 export function published(): PublishedDoc[] {
   return docs.map((doc) => {
     const text = fs.readFileSync(path.join(repoRoot, doc.source), 'utf8')
-    return { ...doc, ownerInputs: text.match(openOwnerInputRE)?.length ?? 0 }
+    return { ...doc, ownerInputs: text.match(openOwnerInputRE)?.length ?? 0, hasHeading: text.startsWith('# ') }
   })
 }
 
@@ -150,10 +152,12 @@ export function routePaths(segments: 1 | 2) {
       }
       // A draft gets <DraftBanner> (.vitepress/theme) above the document, inside the page's main content.
       const banner = doc.ownerInputs > 0 ? '<DraftBanner />\n\n' : ''
+      // A document without its own heading gets its title as the page heading.
+      const heading = doc.hasHeading ? '' : `# ${doc.title}\n\n`
       // `v-pre`: the documents are plain markdown, so Vue must not read `{{ }}` or tags in them as template syntax.
       const include = path.relative(srcDir, path.join(repoRoot, doc.source)).split(path.sep).join('/')
       const body = `<div v-pre>\n\n<!--@include: @/${include}-->\n\n</div>\n`
-      const content = `---\n${JSON.stringify(frontmatter)}\n---\n\n${banner}${body}`
+      const content = `---\n${JSON.stringify(frontmatter)}\n---\n\n${banner}${heading}${body}`
       return { params: segments === 2 ? { dir, page } : { page }, content }
     })
 }
