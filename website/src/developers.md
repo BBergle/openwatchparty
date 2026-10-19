@@ -33,13 +33,18 @@ An app can speak the protocol directly. The [protocol](../../spec/SPEC.md) defin
 
 ## The public relay
 
-The SDKs ship a copy of the public relay list and refresh it only from [/relays.json](/relays.json), so a relay added there reaches apps without an app release; no relay can change the list.
+The SDKs ship a copy of the public relay list and refresh it only from [/relays.json](/relays.json). A relay added there reaches apps without an app release, and no relay can change the list.
 
-The public relay is free for open-source apps, with no registration. Any other app needs written permission from contact@openwatch.party before connecting. Your app sends its name and version as `client`, such as `Example/1.0` — its own name, not the SDK's — and must tell its users it uses the public relay and give them access to the [privacy notice](../../docs/privacy.md). The [terms of use](../../docs/terms.md) state the rules in full.
+The public relay is free for open-source apps, with no registration. Any other app needs written permission from contact@openwatch.party before connecting. When your app uses the public relay:
+
+- It sends its own name and version as `client`, such as `Example/1.0`, not the SDK's.
+- It tells its users that it uses the public relay, and gives them access to the [privacy notice](../../docs/privacy.md).
+
+The [terms of use](../../docs/terms.md) state the rules in full.
 
 ## Running your own relay
 
-Self-hosted relays have no usage restriction, and their rooms are separate from the public relays' rooms. The relay is one binary, `owp-relay`; [Relay and self-hosting](../../relay/README.md) covers running it. Apps then point their custom relay setting at its base URL, such as `https://relay.example.com`.
+Self-hosted relays have no usage restriction, and their rooms are separate from the public relays' rooms. The relay is one binary, `owp-relay`, and [Relay and self-hosting](../../relay/README.md) covers running it. Apps then point their custom relay setting at its base URL, such as `https://relay.example.com`.
 
 ## Security
 

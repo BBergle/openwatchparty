@@ -1,36 +1,51 @@
 # Open Watch Party
 
-Open Watch Party (OWP) is an open protocol, a free public relay and client SDKs that let people watch one title together across different apps.
+Open Watch Party (OWP) lets people watch one title together even when each of them uses a different app. It is an open protocol, a free public relay and client SDKs for TypeScript, Dart, Kotlin and Swift.
 
 ## How it works
 
-Someone creates a room and shares its 6-character code. Each person plays their own copy in their own app. The relay holds the shared timeline (it sees the title and positions, never a file or stream) and the SDK keeps the player on it. The app supplies a player adapter for its player and a resolver that finds its own copy of the host's title.
+Someone creates a room and shares its 6-character code. Everyone who joins plays their own copy of the title in their own app.
 
-## Repository map
+The relay holds the room's shared timeline. It sees the title and the playback position, but never a file or a stream. In each app, the SDK keeps the player on that timeline.
 
-| Path | What it is |
-|---|---|
-| `spec/` | SPEC.md (wire protocol), SDK.md (client behaviour), schemas, examples |
-| `relay/` | The relay `owp-relay` (Go), Dockerfile, `compose.yaml` |
-| `conformance/` | `owp-conform` relay suite, test tables every SDK runs, `owp-peer` scripted participant |
-| `sdk/typescript/` | TypeScript SDK, npm `openwatchparty` |
-| `sdk/dart/` | Dart SDK, package `openwatchparty` |
-| `sdk/kotlin/` | Kotlin Multiplatform SDK, `party.openwatch:openwatchparty` |
-| `sdk/swift/` | Swift SDK, SwiftPM product `OpenWatchParty` |
-| `examples/web/` | An HTML `<video>` page on the TypeScript SDK |
-| `docs/` | Integration guide, terms, privacy notice |
-| `relays.json` | The public relay list |
-| `website/` | https://openwatch.party (VitePress) |
+Your app supplies two pieces of code:
+
+- A **player adapter**, which lets the SDK read and control your player.
+- A **resolver**, which finds the user's own copy of the title the host picked.
 
 ## Where to start
 
 | You are | Start here |
 |---|---|
-| App developer | [Integration guide](docs/integration.md) · [TypeScript](sdk/typescript/README.md) · [Dart](sdk/dart/README.md) · [Kotlin](sdk/kotlin/README.md) · [Swift](sdk/swift/README.md) · [web example](examples/web/README.md) · [`owp-peer`](conformance/peer/README.md) |
-| Relay operator | [Relay guide](relay/README.md) · [self-hosting](relay/README.md#self-hosting) |
-| Implementer in another language | [SPEC.md](spec/SPEC.md) · [SDK.md](spec/SDK.md) · [test tables](conformance/vectors/README.md) · [relay suite](conformance/relay/README.md) |
-| Contributor | [CONTRIBUTING.md](CONTRIBUTING.md) · [AGENTS.md](AGENTS.md) |
+| An app developer | The [integration guide](docs/integration.md), then the SDK for your language: [TypeScript](sdk/typescript/README.md), [Dart](sdk/dart/README.md), [Kotlin](sdk/kotlin/README.md) or [Swift](sdk/swift/README.md). The [web example](examples/web/README.md) is a complete page, and [`owp-peer`](conformance/peer/README.md) is a scripted participant for testing your app. |
+| A relay operator | The [relay guide](relay/README.md) and its [self-hosting](relay/README.md#self-hosting) section. |
+| Implementing OWP in another language | The protocol in [SPEC.md](spec/SPEC.md), client behaviour in [SDK.md](spec/SDK.md), the [test tables](conformance/vectors/README.md) and the [relay suite](conformance/relay/README.md). |
+| A contributor | [CONTRIBUTING.md](CONTRIBUTING.md) and, for automated contributors, [AGENTS.md](AGENTS.md). |
 
-## Public relay, security, license
+## Repository map
 
-Open-source apps use the public relays free without asking; any other app needs written permission first (contact@openwatch.party): see [the terms](docs/terms.md#who-may-use-the-public-relay) and [privacy notice](docs/privacy.md). Report vulnerabilities per [SECURITY.md](SECURITY.md), not in a public issue. The repository is [Apache-2.0](LICENSE).
+| Path | What it is |
+|---|---|
+| `spec/` | The protocol: SPEC.md (wire protocol and relay), SDK.md (client behaviour), JSON schemas and examples |
+| `relay/` | The relay, `owp-relay`, written in Go, with its Dockerfile and `compose.yaml` |
+| `conformance/` | The `owp-conform` relay suite, the test tables every SDK runs, and the `owp-peer` scripted participant |
+| `sdk/typescript/` | The TypeScript SDK, npm package `openwatchparty` |
+| `sdk/dart/` | The Dart SDK, pub.dev package `openwatchparty` |
+| `sdk/kotlin/` | The Kotlin Multiplatform SDK, Maven `party.openwatch:openwatchparty` |
+| `sdk/swift/` | The Swift SDK, SwiftPM product `OpenWatchParty` |
+| `examples/web/` | A web page with an HTML `<video>` player, built on the TypeScript SDK |
+| `docs/` | The integration guide, the terms of use and the privacy notice |
+| `relays.json` | The public relay list |
+| `website/` | The https://openwatch.party site, built with VitePress |
+
+## Public relay
+
+Open-source apps may use the public relays for free, without asking. Any other app needs written permission first: write to contact@openwatch.party. The [terms of use](docs/terms.md#who-may-use-the-public-relay) give the rules, and the [privacy notice](docs/privacy.md) says what the relays keep.
+
+## Security
+
+Report vulnerabilities privately, as [SECURITY.md](SECURITY.md) describes. Don't open a public issue.
+
+## License
+
+The repository is licensed under [Apache-2.0](LICENSE).

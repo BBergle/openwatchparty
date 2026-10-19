@@ -1,22 +1,43 @@
 # Agents
 
-Operating guide for automated contributors. Human process and commit style: [CONTRIBUTING.md](CONTRIBUTING.md). An explicit user instruction in the current conversation overrides this file.
+This is the operating guide for automated contributors. The human process and commit style are in [CONTRIBUTING.md](CONTRIBUTING.md). An explicit user instruction in the current conversation overrides this file.
 
 ## Invariants
 
-- A behaviour difference between the SDKs is a bug in one of them: one name per concept in every SDK, only idioms differ.
-- v1: receivers ignore unknown members at every depth, clients ignore unknown relay message types, the relay answers an unknown client type with `error` `unsupported`. A change a v1 peer cannot safely ignore is a new major version beside v1 at `/v2/…`.
-- Closed enums (new value = v2): `phase`, `player`, `match.state`, `control`, media `kind`. Open: `error.code`, `closed.reason`, `action.kind`.
+- A behaviour difference between the SDKs is a bug in one of them. Every SDK uses one name per concept; only the language idioms differ.
+- In v1, receivers ignore unknown members at every depth, and clients ignore unknown relay message types. The relay answers an unknown client message type with `error` `unsupported`. A change that a v1 peer can't safely ignore is a new major version, served beside v1 at `/v2/…`.
+- Closed enums, where a new value means v2: `phase`, `player`, `match.state`, `control` and media `kind`. Open enums: `error.code`, `closed.reason` and `action.kind`.
 - Every SDK runs and passes every table in `conformance/vectors/`.
-- Sources of truth: [`spec/SPEC.md`](spec/SPEC.md) for the wire (it wins over the schemas; a disagreement is a schema bug), [`spec/SDK.md`](spec/SDK.md) for client behaviour and the SDK API, `.github/workflows/` for checks, root [`relays.json`](relays.json) for the public list.
+- Sources of truth:
+  - [`spec/SPEC.md`](spec/SPEC.md) for the wire. It wins over the schemas, so a disagreement is a schema bug.
+  - [`spec/SDK.md`](spec/SDK.md) for client behaviour and the SDK API.
+  - `.github/workflows/` for checks.
+  - The root [`relays.json`](relays.json) for the public relay list.
 
 ## Layout
 
-Workflows (triggers live in each file): `spec/` → `spec.yml`; `relay/` + `conformance/relay/` → `relay.yml`; `conformance/vectors/` → `vectors.yml`; `sdk/typescript/` + `conformance/peer/` → `sdk-typescript.yml`; `sdk/dart/` → `sdk-dart.yml`; `sdk/kotlin/` → `sdk-kotlin.yml`; `Package.swift` + `sdk/swift/` → `sdk-swift.yml`; `website/` and rendered docs → `website.yml` (every PR and push to `main`); image → `image.yml` (every push and PR); `examples/web/` → none.
+Each area has its own workflow, and each workflow file holds its triggers:
+
+| Area | Workflow |
+|---|---|
+| `spec/` | `spec.yml` |
+| `relay/` and `conformance/relay/` | `relay.yml` |
+| `conformance/vectors/` | `vectors.yml` |
+| `sdk/typescript/` and `conformance/peer/` | `sdk-typescript.yml` |
+| `sdk/dart/` | `sdk-dart.yml` |
+| `sdk/kotlin/` | `sdk-kotlin.yml` |
+| `Package.swift` and `sdk/swift/` | `sdk-swift.yml` |
+| `website/` and the rendered docs | `website.yml`, on every pull request and push to `main` |
+| The relay image | `image.yml`, on every push and pull request |
+| `examples/web/` | none |
 
 Relay and TS unit tests and the conformance `examples` scenario read `spec/examples/`. TS, Kotlin and Swift fail when a vectors table has no runner.
 
-Rendered as site pages: `docs/integration.md`, `spec/SPEC.md`, `spec/SDK.md`, the SDK and relay READMEs, `docs/terms.md`, `docs/privacy.md`, `SECURITY.md` — relative links, GitHub-style anchors; `check-links` fails on links to missing paths, external page loads, or a `/relays.json` one byte off root `relays.json`. `[OWNER INPUT:` in a page shows a draft banner.
+These files are rendered as site pages: `docs/integration.md`, `spec/SPEC.md`, `spec/SDK.md`, the SDK and relay READMEs, `docs/terms.md`, `docs/privacy.md` and `SECURITY.md`. In them:
+
+- Use relative links and GitHub-style anchors.
+- `check-links` fails on a link to a missing path, on a page that loads anything external, and on a `/relays.json` that differs by one byte from the root `relays.json`.
+- `[OWNER INPUT:` anywhere in a page shows a draft banner.
 
 ## What changes together
 
@@ -35,7 +56,11 @@ Each row lands in one pull request.
 | Descriptor ID namespace | SPEC.md §10 makes it valid on the wire; for it to count in matching, also SDK.md §9.3, `conformance/vectors/tools/ref.go` plus regenerated tables, all four SDKs, `docs/integration.md` |
 | Heading or link in a rendered doc | Run the website checks |
 
-The §13.2 policy limits are flags (public values are the defaults); the §13.3 policy durations are constants in `relay/internal/relay/room.go`, scaled only by `--timer-scale`. `/v1/info` reports both; no SDK reads it. Every flag has an `OWP_*` env var, which is how `relay/compose.yaml` sets them. `owp-peer.js` imports `sdk/typescript/src/index.ts` directly — keep the SDK's `erasableSyntaxOnly: true`.
+- The §13.2 policy limits are flags, and their public values are the defaults.
+- The §13.3 policy durations are constants in `relay/internal/relay/room.go`, scaled only by `--timer-scale`.
+- `/v1/info` reports both; no SDK reads it.
+- Every flag has an `OWP_*` environment variable, which is how `relay/compose.yaml` sets them.
+- `owp-peer.js` imports `sdk/typescript/src/index.ts` directly, so keep the SDK's `erasableSyntaxOnly: true`.
 
 ## Checks per area
 
@@ -123,7 +148,13 @@ npm run check-links
 
 `examples/web/`: `npm run build` in `sdk/typescript`, then the TypeScript checks. Image, from the root: `docker build -t owp-relay relay`.
 
-Toolchains: Go 1.26; Node 22+ (22.18+ for `owp-peer`, 24 in website CI); Dart `^3.4.0` (CI format/analyze on stable only); JDK 17 or newer for Kotlin (CI uses 21) — Android target per `-Popenwatchparty.android=true|false`, else on when an Android SDK is known; Apple targets macOS only; Swift 6 (Xcode on Apple platforms).
+Toolchains:
+
+- Go 1.26.
+- Node 22 or later; 22.18 or later for `owp-peer`; the website CI uses 24.
+- Dart `^3.4.0`; CI runs format and analyze on stable only.
+- JDK 17 or later for Kotlin (CI uses 21). The Android target is on or off per `-Popenwatchparty.android=true|false`, and otherwise on when an Android SDK is known. Apple targets build on macOS only.
+- Swift 6, with Xcode on Apple platforms.
 
 ## Generated and copied files
 
@@ -145,7 +176,16 @@ Toolchains: Go 1.26; Node 22+ (22.18+ for `owp-peer`, 24 in website CI); Dart `^
 
 ## Privacy
 
-SPEC.md §15: logs hold no descriptors, names, codes, peer IDs, tokens, positions or message contents (`client` only aggregated; error codes and counts are fine); IPs in memory only, never logged or stored; metrics are counts; room data dies with the room; state holds token hashes, never tokens; SDKs keep tokens in memory only. The `privacy` and `state_tokens` scenarios check the log and state parts of this — never weaken `privacy` to pass.
+SPEC.md §15 binds the relay and the SDKs:
+
+- Logs hold no descriptors, names, codes, peer IDs, tokens, positions or message contents. `client` appears only in aggregates; error codes and counts are fine.
+- IP addresses stay in memory only, and are never logged or stored.
+- Metrics are counts.
+- Room data dies with the room.
+- Persisted state holds token hashes, never tokens.
+- SDKs keep tokens in memory only.
+
+The `privacy` and `state_tokens` scenarios check the log and state parts of this. Never weaken `privacy` to make it pass.
 
 ## Never run
 
@@ -156,4 +196,8 @@ SPEC.md §15: logs hold no descriptors, names, codes, peer IDs, tokens, position
 
 ## Working rules
 
-Stop every process you start; local relays listen on `127.0.0.1`. Tests defend observable behaviour; code small and boring. `examples/web/app.js` stays under 200 lines. No license headers. Prose: plain, short, present tense, no filler or emojis, one line per paragraph or list item, no real app named, no hardcoded deployment facts (the public relays are whatever https://openwatch.party/relays.json lists).
+- Stop every process you start. Local relays listen on `127.0.0.1`.
+- Tests defend observable behaviour. Keep code small and boring.
+- `examples/web/app.js` stays under 200 lines.
+- No license headers.
+- Write as [CONTRIBUTING.md](CONTRIBUTING.md#writing) describes: readable, structured prose, not compressed notes. Also: present tense, one line per paragraph or list item, no real app named, and no hardcoded deployment facts (the public relays are whatever https://openwatch.party/relays.json lists).

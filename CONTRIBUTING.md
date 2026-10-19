@@ -1,23 +1,70 @@
 # Contributing
 
-Send changes as pull requests to `github.com/edde746/openwatchparty`; CI runs on every push and pull request, and the owner decides what merges. Issues are enabled, discussions are not. Report vulnerabilities per [SECURITY.md](SECURITY.md), not in an issue. Automated contributors follow [AGENTS.md](AGENTS.md) (what changes together, ports, never-run list).
+Send changes as pull requests to `github.com/edde746/openwatchparty`. CI runs on every push and pull request, and the owner decides what merges.
+
+Issues are enabled; discussions are not. Report vulnerabilities as [SECURITY.md](SECURITY.md) describes, not in an issue. Automated contributors also follow [AGENTS.md](AGENTS.md), which lists what changes together, the test ports and what never to run.
 
 ## Prerequisites
 
-Go 1.26 (spec, relay, conformance, vectors, and every SDK's integration tests, which build the relay); Node 22+ for the TypeScript SDK (22.18+ for `owp-peer`, CI uses 24 for the website); Dart 3.4+ (formatting 3.7+); JDK 17 or newer for Kotlin (CI uses 21), plus an Android SDK for the Android target and macOS with Xcode for the Apple targets; a Swift 6 toolchain for Swift (Xcode on Apple platforms); Docker for the image.
+Install the toolchains for the parts you work on:
+
+- **Go 1.26** for the spec checks, the relay, the conformance suite and the test tables. Every SDK's integration tests also need Go, because they build the relay.
+- **Node 22 or later** for the TypeScript SDK. `owp-peer` needs 22.18 or later, and the website's CI uses Node 24.
+- **Dart 3.4 or later** for the Dart SDK. Formatting checks need Dart 3.7 or later.
+- **JDK 17 or later** for the Kotlin SDK (CI uses 21). The Android target also needs an Android SDK, and the Apple targets need macOS with Xcode.
+- **A Swift 6 toolchain** for the Swift SDK, which comes with Xcode on Apple platforms.
+- **Docker** to build the relay image.
 
 ## Build and test
 
-Run the checks for each part you touch before opening a pull request: [AGENTS.md](AGENTS.md#checks-per-area) lists the exact commands per area. Component guides: [relay conformance](conformance/relay/README.md), [vectors](conformance/vectors/README.md), and the SDK APIs ([TypeScript](sdk/typescript/README.md), [Dart](sdk/dart/README.md), [Kotlin](sdk/kotlin/README.md), [Swift](sdk/swift/README.md)).
+Before you open a pull request, run the checks for each part you touched. [AGENTS.md](AGENTS.md#checks-per-area) lists the exact commands for each area.
+
+Each component has its own guide: the [relay conformance suite](conformance/relay/README.md), the [test tables](conformance/vectors/README.md), and the SDKs for [TypeScript](sdk/typescript/README.md), [Dart](sdk/dart/README.md), [Kotlin](sdk/kotlin/README.md) and [Swift](sdk/swift/README.md).
 
 ## Changing the protocol
 
-Propose protocol changes as pull requests touching `spec/`. Within v1 a change must be ignorable by an existing peer (new optional fields, message types, open-enum values, `/v1/info` keys, ID namespaces); anything else is v2 at `/v2/…` — see [SPEC.md §4](spec/SPEC.md) and [SDK.md](spec/SDK.md). Relay policy values are settings in `GET /v1/info` and need no client release, except `resumeMs`, for which SDKs assume 300000 on public relays: raising it changes SDK.md and all four SDKs. Most protocol changes move several parts at once: check the [what-changes-together table](AGENTS.md#what-changes-together) first, and land each row's changes together in one pull request.
+Propose protocol changes as pull requests that touch `spec/`.
+
+Within v1, a change must be one that an existing peer can safely ignore, such as a new optional field, a new message type, a new value of an open enum, a new `/v1/info` key or a new ID namespace. Any other change is v2, served at `/v2/…`. See [SPEC.md §4](spec/SPEC.md) and [SDK.md](spec/SDK.md).
+
+Relay policy values are each relay's choice, and `GET /v1/info` reports them. Changing one needs no client release, with one exception: `resumeMs` is fixed at 300000 on every v1 relay, and clients rely on that value.
+
+Most protocol changes move several parts at once. Check the [what-changes-together table](AGENTS.md#what-changes-together) first, and land all the changes in a row together, in one pull request.
 
 ## Commit messages
 
-`type(scope): subject` ([Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)): lowercase, imperative, no trailing period; the body says what changed and why. Types: `fix`, `feat`, `docs`, `test`, `ci`, `chore`. Scopes: `spec`, `relay`, `conformance`, `vectors`, `peer`, `examples`, `website`, `sdk-typescript`, `sdk-dart`, `sdk-kotlin`, `sdk-swift`, `sdk` (all four); no scope when spanning parts, as in `ci: test the relay on the latest Go 1.26 patch`. Breaking changes take `!` after the scope and a `BREAKING CHANGE:` footer. No CLA, no `Signed-off-by`.
+Commit subjects follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `type(scope): subject`, lowercase and imperative, with no trailing period. The body says what changed and why.
 
-## Style and license
+- Types: `fix`, `feat`, `docs`, `test`, `ci`, `chore`.
+- Scopes: `spec`, `relay`, `conformance`, `vectors`, `peer`, `examples`, `website`, `sdk-typescript`, `sdk-dart`, `sdk-kotlin`, `sdk-swift`, and `sdk` for all four SDKs.
+- A change that spans several parts has no scope, as in `ci: test the relay on the latest Go 1.26 patch`.
+- A breaking change puts `!` after the scope and adds a `BREAKING CHANGE:` footer.
 
-Go `gofmt`; Dart format width 120, strict analyzer; TypeScript `strict` with `noUncheckedIndexedAccess`; Kotlin `explicitApi()` and official style; Swift 6 language mode, no warnings. Prose: plain and short, no hard line breaks in Markdown. No license headers in source files. Contributions are under [Apache-2.0](LICENSE) (§5); submit only work you may license that way, and others' code only under an Apache-2.0-compatible license.
+There is no CLA, and commits need no `Signed-off-by`.
+
+## Code style
+
+- Go: `gofmt`.
+- Dart: format width 120 and the strict analyzer.
+- TypeScript: `strict` with `noUncheckedIndexedAccess`.
+- Kotlin: `explicitApi()` and the official style.
+- Swift: Swift 6 language mode, with no warnings.
+
+Source files have no license headers.
+
+## Writing
+
+Documents, READMEs and public API doc comments should be easy to read, not just short:
+
+- **Orient first.** Start each document and each major section with what it covers, then give the detail.
+- **One idea per paragraph,** in two to four sentences. When a paragraph collects many facts, turn it into a list, a table or a code example.
+- **Use the structure the content has.** Steps in order become a numbered list, parallel rules or options a bulleted list, and reference material a table with a short "what it does" column.
+- **Write full sentences** with one main idea each, in plain words, present tense and active voice. Avoid semicolon chains, nested parentheses and telegraphic shorthand.
+- **Use code formatting only for things you type or see in code,** such as identifiers, values, paths and commands.
+- **Address the reader as "you"** in guides and READMEs. SPEC.md and SDK.md use the third person and RFC 2119 keywords.
+- **Doc comments start with a one-sentence summary,** then add details.
+- No filler, hype or emojis. Put each paragraph, list item and table row on one line, with no hard line breaks. Keep heading text stable, because other documents link to it.
+
+## License
+
+Contributions are licensed under [Apache-2.0](LICENSE), as its section 5 describes. Submit only work you may license that way, and include others' code only under an Apache-2.0-compatible license.
