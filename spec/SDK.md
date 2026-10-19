@@ -1,6 +1,8 @@
 # Open Watch Party SDKs
 
-The client behaviour every SDK implements (§3–§15) and the shared Kotlin/Dart/TypeScript/Swift API (§16). `SPEC.md` owns the wire and wins on anything crossing it. `conformance/vectors/` pins the deterministic parts (§17).
+This document describes what an Open Watch Party SDK does and the API every SDK shares. Sections §3–§15 define the client behaviour every SDK implements, and §16 defines the shared API of the Kotlin, Dart, TypeScript and Swift SDKs.
+
+`SPEC.md` owns the wire, and it wins over this document on anything that crosses the wire. The vector tables in `conformance/vectors/` pin the deterministic parts, as §17 describes.
 
 The key words MUST, MUST NOT, REQUIRED, SHOULD, SHOULD NOT, RECOMMENDED, MAY and OPTIONAL in this document are to be interpreted as described in RFC 2119 and RFC 8174 when, and only when, they appear in all capitals.
 
@@ -26,23 +28,79 @@ The key words MUST, MUST NOT, REQUIRED, SHOULD, SHOULD NOT, RECOMMENDED, MAY and
 
 ## 1. Scope
 
-An SDK does everything between app and relay: relay list (§3), routing (§4), relay choice (§6), WebSocket, clock sync (§5), resume (§14), room state (§8), events (§15), matching via the app's resolver (§9), `status` (§10), following (§11) and commands (§12). The app supplies a player adapter, UI and, to match other participants' media, a resolver (§16.7).
+An SDK does everything between the app and the relay, the WebSocket included:
 
-An SDK MUST implement §3–§15 and pass every vector table (§17). This document defines the algorithms and values `SPEC.md` §16 leaves to it.
+|what the SDK does|section|
+|---|---|
+|keeps the relay list|§3|
+|routes room codes to their relay|§4|
+|syncs the clock|§5|
+|chooses a relay for a new room|§6|
+|tracks the room state|§8|
+|matches media through the app's resolver|§9|
+|reports `status`|§10|
+|follows the room|§11|
+|sends the user's commands|§12|
+|resumes after a drop|§14|
+|emits events|§15|
 
-Packages: npm/Dart `openwatchparty`, Maven `party.openwatch:openwatchparty` (Kotlin package `party.openwatch`), SwiftPM package `OpenWatchParty` from `https://github.com/edde746/openwatchparty`. Only WebSocket, HTTP GET and JSON are needed; the app may supply the first two (§16.8). Kotlin: kotlinx-coroutines, kotlinx-serialization-json, the app's Ktor `HttpClient` with WebSockets. Dart: pure Dart, no Flutter, Dart ≥ 3.4 < 4; deps `web_socket` and `web`; without `dart:io`/JS interop the default `httpGet` throws `UnsupportedError` — pass one. TypeScript: global `WebSocket`/`fetch` (Node ≥ 22), no runtime deps. Swift: tools ≥ 6.0, Swift 6 language mode; iOS 16, macOS 13, tvOS 16, watchOS 9, visionOS 1; Foundation only (`FoundationNetworking` on Linux), no other deps; the defaults use `URLSessionWebSocketTask` and `URLSession`.
+The app supplies a player adapter and the UI. To match other participants' media, it also supplies a resolver. §16.7 lists what an app must do.
+
+An SDK MUST implement §3–§15 and pass every vector table of §17. This document defines the algorithms and values that `SPEC.md` §16 leaves to the SDKs.
+
+### Packages
+
+An SDK needs only WebSocket, HTTP GET and JSON. The app may supply its own WebSocket and HTTP GET, as §16.8 shows.
+
+|SDK|package|depends on|
+|---|---|---|
+|Kotlin|Maven `party.openwatch:openwatchparty`, Kotlin package `party.openwatch`|kotlinx-coroutines, kotlinx-serialization-json and the app's Ktor `HttpClient` with WebSockets|
+|Dart|`openwatchparty`|the packages `web_socket` and `web`|
+|TypeScript|npm `openwatchparty`|the global `WebSocket` and `fetch` of Node ≥ 22, with no runtime dependencies|
+|Swift|SwiftPM package `OpenWatchParty` from `https://github.com/edde746/openwatchparty`|Foundation only, with `FoundationNetworking` on Linux|
+
+The Dart SDK is pure Dart, without Flutter, and needs Dart ≥ 3.4 < 4. Its default `httpGet` needs `dart:io` or JS interop. On a platform with neither, it throws `UnsupportedError`, so the app passes its own.
+
+The Swift SDK needs Swift tools ≥ 6.0 and uses the Swift 6 language mode. It supports iOS 16, macOS 13, tvOS 16, watchOS 9 and visionOS 1, and has no dependencies beyond Foundation. Its defaults use `URLSessionWebSocketTask` and `URLSession`.
 
 ## 2. Conventions and constants
 
-Times/durations are integer ms.
+This section fixes how every SDK handles times, integers, timers and doubles, and lists the constants the later sections use.
 
-Integers sent are integral, within ±(2^53 − 1) (`SPEC.md` §2) and their field bounds, written without fraction/exponent (`1000`, not `1000.0`/`1e3`); Dart sends `int`, not `double`. The SDK checks app-passed and computed wire ints before any local effect or send; failure throws `invalid_message`, changing nothing: `seek` (§12), `pause`'s computed position, `setMedia` position (0..2^53 − 1), descriptor ints (§9.7), `setOffset` (±604800000, §13).
+All times and durations are integers in milliseconds, written ms.
 
-Delays are 64-bit integer ms, negative = 0. Native timers get ≤ 2147483647 ms each; a clamped timer recomputes the remainder on firing. No unbounded ms becomes a native duration unclamped.
+### Integers
 
-Local time is monotonic, never wall clock (Kotlin `TimeSource.Monotonic`, Dart `Stopwatch`, TS `Math.floor(performance.now())`, Swift `ContinuousClock`; app may pass its own, §16.8). Relay time now = local + clock offset (§5), unknown before the first sample.
+Every integer the SDK sends is integral and lies within ±(2^53 − 1), as `SPEC.md` §2 requires, and within its field's bounds. It is written without a fraction or exponent: `1000`, not `1000.0` or `1e3`. The Dart SDK sends an `int`, never a `double`.
 
-Integer halving rounds down (operands ≥ 0). Doubles are IEEE 754, each operation rounded separately — compute every product and quotient into its own variable where `a × b + c` may fuse. Optional "equal" = both present and equal; "ignoring case" adds non-empty and ASCII `A`–`Z` → `a`–`z` only.
+The SDK checks every wire integer before any local effect and before sending it, whether the app passed it or the SDK computed it. A failed check throws `invalid_message` and changes nothing. These values are checked:
+
+- the values of `seek`, listed in §12
+- the position `pause` computes
+- the `setMedia` position, which must lie within 0..2^53 − 1
+- the integers in a descriptor, listed in §9.7
+- the `setOffset` value, which must lie within ±604800000 as §13 says
+
+### Timers
+
+Delays are 64-bit integers in ms, and a negative delay counts as 0. A native timer gets at most 2147483647 ms. A clamped timer recomputes the remaining delay when it fires. No unbounded millisecond value becomes a native duration without this clamp.
+
+### Time
+
+Local time comes from a monotonic clock, never the wall clock. The defaults are Kotlin's `TimeSource.Monotonic`, Dart's `Stopwatch`, TypeScript's `Math.floor(performance.now())` and Swift's `ContinuousClock`. The app may pass its own clock through the parameters of §16.8.
+
+Relay time now is local time plus the clock offset of §5. It is unknown before the first clock sample.
+
+### Arithmetic and comparisons
+
+Integer halving rounds down, and its operands are always ≥ 0. Doubles are IEEE 754, and each operation is rounded on its own. Where a language may fuse `a × b + c` into one operation, compute every product and quotient into its own variable.
+
+Two phrases have a fixed meaning in comparisons:
+
+- Two optional values are "equal" only when both are present and equal.
+- Values compared "ignoring case" must also both be non-empty, and only ASCII `A`–`Z` fold to `a`–`z`.
+
+### Constants
 
 These values are constants, not settings:
 
@@ -55,7 +113,7 @@ These values are constants, not settings:
 |clock-step slack|100 ms|§5|
 |connect timeout|10000 ms|§6, §7.1, §14|
 |resolve timeout|30000 ms|§9.2|
-|HTTP GET|aborted after 5000 ms; body at most 65536 bytes; no redirects|§3.4|
+|HTTP GET|aborted after 5000 ms, body at most 65536 bytes, no redirects|§3.4|
 |public list source|`https://openwatch.party/relays.json`|§3|
 |list refresh|on `joined`, when this object has had no successful refresh yet or the last one is 24 h old, and no background refresh is running|§3|
 |match tolerance|1500 ms|§9|
@@ -65,8 +123,8 @@ These values are constants, not settings:
 |tick|500 ms|§11|
 |deadband|350 ms|§11|
 |nudge|× 0.96 ahead, × 1.04 behind, until under 150 ms|§11|
-|seek threshold|2000 ms with rate control, 1000 ms without; the adapter's seek accuracy when larger|§11|
-|held seek threshold|500 ms; the adapter's seek accuracy when larger|§10, §11|
+|seek threshold|2000 ms with rate control and 1000 ms without, or the adapter's seek accuracy when larger|§11|
+|held seek threshold|500 ms, or the adapter's seek accuracy when larger|§10, §11|
 |seek lead|250 ms|§11|
 |seek cooldown|2000 ms|§11|
 |end margin|1000 ms|§11|
@@ -81,270 +139,746 @@ These values are constants, not settings:
 
 ## 3. Relay list
 
+A party needs to know which relays exist and which room codes each one serves. This section defines where that list comes from, how the SDK checks it, when it refreshes it and how it fetches it.
+
 ### 3.1 Sources
 
-A `Relays` object holds the relays a party uses. One object serves every party; its list and refresh schedule belong to it.
+A `Relays` object holds the relays a party uses. One object serves every party, and the list and its refresh schedule belong to the object. There are two kinds.
 
-`Relays.public()` holds the public list (`SPEC.md` §5.2). It starts from the SDK's compiled copy of the repo `relays.json`, and each valid refresh from `https://openwatch.party/relays.json` replaces it, in memory only.
+#### The public list
 
-`Relays.at(baseUrl)` is one self-hosted relay for everything: `create` uses it alone (§6), `join` and resume go there whatever the code's first symbol, and it fetches nothing. `baseUrl` is the relay's `https://` or `http://` base (`https://relay.example.com`, `http://192.168.1.5:8080/owp`), trailing `/`s removed; after that trimming the constructor throws `invalid_message` unless it is `https://` or `http://` in lower case followed by at least one character before the first `/`, `?` or `#`. The relay URL is the base with `https://` → `wss://` or `http://` → `ws://`, plus `/v1/ws`; the constructor also throws `invalid_message` unless that URL passes §3.2's `url` rule. Its `list` is one entry: `id` `"custom"`, `name` the trimmed base URL, `url` the relay URL, `prefixes` all 31 symbols in alphabet order. `relayFor(code)` returns that entry for every valid code; `refresh()` does nothing and returns true.
+`Relays.public()` holds the public list of `SPEC.md` §5.2. It starts from the SDK's compiled copy of the repository's `relays.json`. Each valid refresh from `https://openwatch.party/relays.json` replaces the list, in memory only.
+
+#### A self-hosted relay
+
+`Relays.at(baseUrl)` is one self-hosted relay that serves everything. `create` uses it alone, as §6 says, and `join` and resume go to it whatever the code's first symbol is. It never fetches anything.
+
+`baseUrl` is the relay's `https://` or `http://` base, such as `https://relay.example.com` or `http://192.168.1.5:8080/owp`. The constructor removes trailing `/`s. After that trimming, it throws `invalid_message` unless the base is `https://` or `http://` in lower case, followed by at least one character before the first `/`, `?` or `#`.
+
+The relay URL is the base with `https://` replaced by `wss://`, or `http://` by `ws://`, followed by `/v1/ws`. The constructor also throws `invalid_message` unless that URL passes the `url` rule of §3.2.
+
+Its `list` holds one entry:
+
+|member|value|
+|---|---|
+|`id`|`"custom"`|
+|`name`|the trimmed base URL|
+|`url`|the relay URL|
+|`prefixes`|all 31 symbols, in alphabet order|
+
+`relayFor(code)` returns that entry for every valid code. `refresh()` does nothing and returns true.
 
 ### 3.2 Validation
 
-A public list, fetched or embedded, is used only when valid by `SPEC.md` §5.2; an invalid one is rejected whole and the current list stays. An object with `relays` an array of ≥ 1 objects, each:
+The SDK uses a public list, fetched or embedded, only when it is valid by `SPEC.md` §5.2. It rejects an invalid list whole, and the current list stays.
 
-- `id`: 1–32 of `a`–`z`/`0`–`9`/`-`, not leading `-`, unique;
-- `name`: 1–64 code points, no forbidden character (`SPEC.md` §2), no unpaired surrogate;
-- `url`: lower-case `wss://`/`ws://`, non-empty between `://` and next `/`, ends `/v1/ws`, rest printable ASCII U+0021–U+007E except `?`/`#`;
-- `prefixes`: non-empty, symbols of `23456789ABCDEFGHJKMNPQRSTUVWXYZ`, none twice in the list.
+A valid list is an object whose `relays` member is an array of at least 1 object. Each entry has these members:
 
-Every `url` of a list is `wss://`; `ws://` passes only for `Relays.at` with an `http://` base. Unknown members dropped (only the four kept). Vectors: `relay-list.json`.
+- `id` is 1–32 characters from `a`–`z`, `0`–`9` and `-`. It doesn't start with `-`, and it is unique in the list.
+- `name` is 1–64 code points, with no unpaired surrogate and no character that `SPEC.md` §2 forbids.
+- `url` starts with `wss://` or `ws://` in lower case, and is non-empty between `://` and the next `/`. It ends with `/v1/ws`. The rest of it is printable ASCII, U+0021–U+007E, except `?` and `#`.
+- `prefixes` is non-empty and holds symbols of `23456789ABCDEFGHJKMNPQRSTUVWXYZ`. No symbol appears twice in the whole list.
+
+Every `url` in a list is `wss://`. A `ws://` URL passes only for `Relays.at` with an `http://` base. Unknown members are dropped, and only the four above are kept.
+
+The vectors are in `relay-list.json`.
 
 ### 3.3 Refresh
 
-A refresh is one GET of `https://openwatch.party/relays.json`, nothing else; failure or an invalid list changes nothing. Only `Relays.public()` refreshes.
+A refresh is one GET of `https://openwatch.party/relays.json`, and nothing else. If the GET fails or returns an invalid list, nothing changes. Only `Relays.public()` refreshes.
 
-On `joined`, if this object has had no successful refresh yet or its last success is ≥ 24 h old, one starts in the background (failures don't count), unless a background refresh is already running. It never delays `create`/`join`. Routing may force one (§4.2), awaited. `refresh()` forces one, returning validity.
+A refresh starts in one of three ways:
 
-A room stays on its relay for life; new lists affect later `create`/`join` only.
+- On `joined`, one starts in the background when this object has had no successful refresh yet, or its last success is at least 24 h old. Failed refreshes don't count. None starts while a background refresh is already running. A background refresh never delays `create` or `join`.
+- Routing may force one and then wait for it, as §4.2 describes.
+- `refresh()` forces one, and returns whether the list it got was valid.
+
+A room stays on its relay for its whole life. A new list affects only later `create` and `join` calls.
 
 ### 3.4 HTTP
 
-Every SDK GET (refreshes only), own or app-supplied (§16.8):
+The SDK makes HTTP GETs only for refreshes. These rules apply to every GET, whether the SDK's own fetcher makes it or one the app supplies through §16.8:
 
-- aborted at 5 s (body included), connection closed; an app fetcher MUST stop on its cancel signal, and the SDK gives up then regardless;
-- body ≤ 65536 bytes, longer aborts/fails — also for app fetchers, as UTF-8 bytes of returned text;
-- no redirects (3xx fails; app fetchers MUST NOT follow);
-- only status 200 with a UTF-8 JSON body succeeds.
+- The GET is aborted after 5 s, body included, and the connection is closed. An app fetcher MUST stop on its cancel signal, and the SDK gives up at that point regardless.
+- The body is at most 65536 bytes, and a longer one aborts or fails the GET. For an app fetcher, the limit applies to the returned text, measured as UTF-8 bytes.
+- Redirects are not followed, so a 3xx response fails. App fetchers MUST NOT follow them.
+- Only status 200 with a UTF-8 JSON body succeeds.
 
 ## 4. Room codes and routing
 
+A room code tells the SDK which relay holds the room. This section defines how the SDK reads a code the user typed, and how it finds that relay.
+
 ### 4.1 Normalizing a code
 
-`join` normalizes first, to route by the first symbol; `relayFor`/`formatCode` share the normalizer, which applies the relay's rule (`SPEC.md` §5.1): remove separators (exactly U+0020, U+0009, U+000A, U+000D, U+00A0, U+2007, U+202F, U+002D, U+2010–U+2014, U+2212), map ASCII `a`–`z` → `A`–`Z` only. The result MUST be 6 symbols of `23456789ABCDEFGHJKMNPQRSTUVWXYZ`, else `invalid_code` before any network use; `join` sends the normalized code.
+`join` normalizes the code first, so that it can route by the first symbol. `relayFor` and `formatCode` share the same normalizer. It applies the relay's rule of `SPEC.md` §5.1:
 
-`formatCode(code)`: normalized, grouped `K7M-Q2X`; throws `invalid_code`. Vectors: `code-routing.json`.
+1. Remove the separators. These are exactly U+0020, U+0009, U+000A, U+000D, U+00A0, U+2007, U+202F, U+002D, U+2010–U+2014 and U+2212.
+2. Map ASCII `a`–`z` to `A`–`Z`, and nothing else.
+
+The result MUST be 6 symbols of `23456789ABCDEFGHJKMNPQRSTUVWXYZ`. Otherwise the code is invalid, and the SDK reports `invalid_code` before any network use. `join` sends the normalized code.
+
+`formatCode(code)` returns the normalized code, grouped for display as in `K7M-Q2X`. It throws `invalid_code` for an invalid code.
+
+The vectors are in `code-routing.json`.
 
 ### 4.2 Routing
 
-The relay whose `prefixes` hold the first symbol (unique, §3.2). None: force a refresh (§3.3), route again (on the old list if it failed); still none: `room_not_found`.
+A code routes to the relay whose `prefixes` hold its first symbol. §3.2 makes that relay unique.
 
-A `join` answered `room_not_found`, no refresh yet forced in this call: force one; if the symbol now maps to another `url` (by URL, not id), join there once, answer final; else fail with the first `room_not_found`. At most one forced refresh per `join`. With `Relays.at` the one relay owns every symbol and nothing refreshes, so its `room_not_found` is final.
+When no relay holds the symbol, the SDK forces a refresh as in §3.3 and routes again. If the refresh failed, it routes on the old list. When still no relay holds the symbol, the call fails with `room_not_found`.
+
+A relay may answer a `join` with `room_not_found`. If this call hasn't forced a refresh yet, the SDK then forces one:
+
+- If the symbol now maps to another `url`, the SDK joins there once, and that answer is final. Relays are compared by URL, not by id.
+- Otherwise the `join` fails with the first `room_not_found`.
+
+A `join` forces at most one refresh. With `Relays.at`, the one relay owns every symbol and nothing refreshes, so its `room_not_found` is final.
 
 ## 5. Clock sync
 
-One clock per connection, from WebSocket open, never inherited; while reconnecting the dropped clock stays in use (§14). It implements `SPEC.md` §16.2.
+Each connection keeps its own estimate of relay time. This section defines how the SDK pings the relay, which answers it uses and how it picks the best sample.
 
-Ping `id`s 1, 2, 3, … at open, +500, +1000 (burst), then +5000, +10000, every 5000, computed from open; send times recorded locally.
+There is one clock per connection, starting when its WebSocket opens. A connection never inherits another's clock. While the party reconnects, the dropped connection's clock stays in use, as §14 describes. The clock implements `SPEC.md` §16.2.
 
-Unknown/answered `pong` `id`s are ignored; first pong clears the ping. `rtt = now − sentAt`; ignore if < 0 or > 1000 (1000 kept). Else `offset = serverTime − (sentAt + rtt / 2)`.
+### Pings
 
-Step: non-empty window and `|offset − best.offset| > (rtt + best.rtt) / 2 + 100` clears it first (equal is kept; ignored pongs never step). Append, keep 8 newest (oldest evicted even if best). Best = lowest rtt, oldest on ties. `joined.serverTime` unused. Vectors: `clock-sync.json` (`accepted`/`stepped`/`ignored` per pong, with best after it).
+Pings have the `id`s 1, 2, 3 and so on. The first three are the burst, sent at open, at open +500 and at open +1000. The rest follow at open +5000, at open +10000 and then every 5000. All these times are computed from the open, and the SDK records each send time on the local clock.
+
+### Samples
+
+The SDK ignores a `pong` whose `id` is unknown or already answered. The first `pong` for a ping clears that ping.
+
+The round trip is `rtt = now − sentAt`. The SDK ignores the pong when `rtt` is below 0 or above 1000, and keeps a round trip of exactly 1000. Otherwise the pong gives a sample with `offset = serverTime − (sentAt + rtt / 2)`.
+
+### The window
+
+The samples go into a window. Before adding a sample, the SDK checks for a clock step. When the window isn't empty and `|offset − best.offset| > (rtt + best.rtt) / 2 + 100`, it clears the window first. A difference exactly at the limit keeps the window, and an ignored pong never steps.
+
+The SDK then appends the sample and keeps the 8 newest. The oldest is evicted even when it is the best. The best sample is the one with the lowest rtt, and the oldest one on ties. `joined.serverTime` is unused.
+
+The vectors are in `clock-sync.json`. For each pong they give `accepted`, `stepped` or `ignored`, and the best sample after it.
 
 ## 6. Choosing a relay for `create`
 
-One relay (always so for `Relays.at`): connect, send `create` at once, no pong wait; a failed connection is `unreachable`.
+A `create` has no code to route by, so the SDK chooses the relay. It races the relays in the list and falls back to the next one when a relay is full.
 
-Several: at t0 the SDK connects to every relay at once, each connection with its own clock and burst from its open (§5). The first relay whose connection yields an accepted clock sample (a `pong` with 0 ≤ rtt ≤ 1000, §5) wins: the SDK sends `create` on that connection, closes every other connection and attempt with 1000, and the winner's clock continues as the room's. Pongs are handled in arrival order; the first accepted one wins. No winner within the connect timeout (§2) from t0, or every connection failed first (refused, HTTP 429/503 included, closed or errored): `create` fails with `unreachable`.
+### One relay
 
-On `relay_full`: close that connection (1000) and try the first untried relay in list order: connect and send `create` at once, no pong wait. When every relay has answered `relay_full`, `create` fails with the last `relay_full` error (its `message` and `re`). Any other refusal ends `create` with that code; a lost connection or no answer within the connect timeout is `unreachable`, with no more tries.
+With one relay, which is always the case for `Relays.at`, the SDK connects and sends `create` at once, without waiting for a pong. A failed connection fails `create` with `unreachable`.
+
+### Several relays
+
+With several relays, the SDK connects to every relay at once, at t0. Each connection has its own clock and its own burst from its open, as §5 describes.
+
+The first relay whose connection yields an accepted clock sample wins. By §5, an accepted sample is a `pong` with 0 ≤ rtt ≤ 1000. Pongs are handled in arrival order, and the first accepted one wins. Then:
+
+- The SDK sends `create` on the winner's connection.
+- It closes every other connection and attempt with status 1000.
+- The winner's clock continues as the room's clock.
+
+`create` fails with `unreachable` when no relay wins within the connect timeout of §2 from t0. It also fails with `unreachable` when every connection failed first, by being refused, HTTP 429 and 503 included, or by closing or erroring.
+
+### Full relays
+
+When a relay answers `relay_full`, the SDK closes that connection with status 1000. It then tries the first untried relay in list order: it connects and sends `create` at once, without waiting for a pong. When every relay has answered `relay_full`, `create` fails with the last `relay_full` error, including its `message` and `re`.
+
+Any other refusal ends `create` with that refusal's code. A lost connection, or no answer within the connect timeout, ends it with `unreachable`. In both cases the SDK tries no more relays.
 
 ## 7. Session lifecycle
 
+This section covers the party's connections, how `create` and `join` start a session, what the SDK does on `joined`, and how a party ends.
+
 ### 7.1 Connections
 
-Open within the connect timeout (§2) or the attempt failed. `joined` or an `error` with matching `re` must answer within the connect timeout of sending (other `error`s ignored while waiting; early close = failed); for `resume` that covers `joined` plus a first clock sample (§14). A failed `create` or `join` = `unreachable`; a failed reconnect attempt retries (§14).
+A connection must open within the connect timeout of §2, or the attempt has failed. A `joined`, or an `error` with a matching `re`, must answer within the connect timeout after the SDK sends its request. While the SDK waits, it ignores other `error`s. A connection that closes early has failed. For `resume`, the timeout covers the `joined` plus a first clock sample, as §14 says.
 
-Unknown message `type`s/members are ignored. The constructor validates `name` (1–32 code points, no forbidden char/unpaired surrogate) and `client` (1–64, same, and contains a `/` whose first occurrence is neither its first nor its last character), throwing `invalid_message`. Vectors: `names.json`.
+When a `create` or `join` fails in one of these ways, the call fails with `unreachable`. A failed reconnect attempt is retried, as §14 describes.
 
-All messages are valid UTF-8 (`SPEC.md` §3.1); unpaired surrogates in descriptor strings are refused pre-send (`invalid_message`, §9.7). Sent objects never repeat a member name (`SPEC.md` §4). Commands are checked pre-send (§12).
+The SDK ignores unknown message `type`s and unknown members.
+
+The party's constructor checks `name` and `client`, and throws `invalid_message` when either fails:
+
+- `name` is 1–32 code points, with no forbidden character and no unpaired surrogate.
+- `client` is 1–64 code points under the same rules. It contains a `/`, and its first `/` is neither its first nor its last character.
+
+The vectors are in `names.json`.
+
+All messages are valid UTF-8, as `SPEC.md` §3.1 requires. The SDK refuses unpaired surrogates in descriptor strings before sending, with `invalid_message` under §9.7. Objects it sends never repeat a member name, which `SPEC.md` §4 forbids. Commands are checked before sending, as §12 lists.
 
 ### 7.2 Create and join
 
-`create()`: choose a relay (§6), send `{type: create, name, client}`, await `joined`. `join(code)`: normalize first (`invalid_code` before `already_in_room`, before any change), route (§4), connect, send `{type: join, code, name, client}`, await `joined` per §4.2.
+`create()` chooses a relay as §6 describes, sends `{type: create, name, client}` and awaits `joined`.
 
-Failures carry the relay's code (open set: `room_not_found`, `room_full`, `room_locked`, `rate_limited`, `client_blocked`, `relay_full` for create) or SDK `invalid_code`/`unreachable`/`invalid_message` (malformed `joined`, §8). `already_in_room` while attempting or `connected`/`reconnecting` (not `idle`/`ended`). An attempt clears `endReason` and away (§10.2), resets state, publishes `connecting`; failure closes connections (1000), returns to `idle`, no `Ended`. Neither an attempt nor its failure or cancellation releases the adapter: one attached while `idle` or `ended` stays attached, with its `ref`, into the session the attempt starts, since only §11.2's releases let an adapter go.
+`join(code)` runs these steps:
 
-`leave()`/`close()` mid-attempt cancels: back to `idle`, no `Ended`, pending call `cancelled`. Connections close (1000) except one that already sent `create`/`join`, kept to answer/timeout — `joined` gets `leave` then close, `error` close (`SPEC.md` §11.5). Kotlin: cancelling the caller's coroutine cancels likewise. Swift: cancelling the calling task cancels likewise, and the call throws `CancellationError`.
+1. It normalizes the code. An invalid code fails with `invalid_code` before the `already_in_room` check, and before any change.
+2. It routes the code by §4.
+3. It connects.
+4. It sends `{type: join, code, name, client}`.
+5. It awaits `joined`, as §4.2 describes.
+
+A failed call carries the relay's error code, or one of the SDK's own. The relay's codes are an open set, such as `room_not_found`, `room_full`, `room_locked`, `rate_limited`, `client_blocked`, and `relay_full` for `create`. The SDK's own are `invalid_code`, `unreachable` and `invalid_message`, the last for a malformed `joined` as §8 defines it.
+
+#### Attempts
+
+Both calls fail with `already_in_room` while an attempt is running, or while the party is `connected` or `reconnecting`. They work in `idle` and `ended`.
+
+An attempt clears `endReason` and the away flag of §10.2, resets the state and publishes `connecting`. When it fails, the SDK closes its connections with status 1000 and returns to `idle`, without emitting `Ended`.
+
+An attempt doesn't release the adapter, and neither does its failure or cancellation. Only the releases of §11.2 let an adapter go. So an adapter attached while `idle` or `ended` stays attached, with its `ref`, into the session the attempt starts.
+
+#### Cancelling an attempt
+
+`leave()` or `close()` during an attempt cancels it. The party goes back to `idle` without emitting `Ended`, and the pending call fails with `cancelled`.
+
+The SDK closes the attempt's connections with status 1000, except a connection that has already sent `create` or `join`. That one is kept until its answer arrives or its timeout passes. A `joined` answer gets a `leave` and then a close, and an `error` answer gets a close, as in `SPEC.md` §11.5.
+
+In Kotlin, cancelling the caller's coroutine cancels the attempt the same way. In Swift, cancelling the calling task does too, and the call throws `CancellationError`.
 
 ### 7.3 On `joined`
 
-In order: keep what a resume needs (relay URL, code, peer ID, token; §14); accept the snapshot at any `rev` as the `room` baseline (§8); handle media/epoch (§8–§9; a reconnect only if changed, §14); send `status` (§10). A reconnect also diffs participants vs pre-drop (§15). Messages arriving before the switch to this connection are then handled in order.
+On `joined`, the SDK goes through these steps in order:
+
+1. It keeps what a resume under §14 needs: the relay URL, the code, the peer ID and the token.
+2. It accepts the snapshot as the `room` baseline of §8, at any `rev`.
+3. It handles the media and the epoch by §8–§9. After a reconnect, it does so only if the epoch changed, as §14 says.
+4. It sends `status` as §10 describes.
+
+After a reconnect, the SDK also compares the participants with those from before the drop, for the events of §15. It then handles, in order, the messages that arrived before it switched to this connection.
 
 ### 7.4 Ending
 
+A party ends for one of these reasons:
+
 |reason|cause|
 |---|---|
-|`left`|the app called `leave()`: when connected, the SDK sends `leave` and closes the connection with status 1000|
+|`left`|the app called `leave()`. When connected, the SDK sends `leave` and closes the connection with status 1000.|
 |`ended`|`closed` with reason `ended`, or with a reason the SDK doesn't know|
 |`kicked`|`closed` with reason `kicked`|
 |`expired`|`closed` with reason `expired`|
-|`replaced`|the relay closed the connection with status 4000: a resume elsewhere took over. Never resumed|
-|`lost`|the party can't go on: resume became impossible (§14) or a `room` starting a new epoch had no valid `media` (§8); the error is attached|
+|`replaced`|the relay closed the connection with status 4000, because a resume elsewhere took over. Never resumed.|
+|`lost`|the party can't go on: resume became impossible (§14), or a `room` starting a new epoch had no valid `media` (§8). The error is attached.|
 
-Reconnecting `leave()` ends `left` unsent; idle/ended it no-ops. `end()` (§12) ends via the relay's `closed`. After `closed`, close 1000 (relay leaves it open). `lost` errors: `unreachable` (window), `resume_failed`/`client_blocked` (relay), `invalid_message` (new epoch without valid `media`, after `leave`).
+A `leave` call while reconnecting ends the party with `left` and sends nothing. In `idle` or `ended`, it does nothing. The `end()` command of §12 ends the party through the relay's `closed`. After a `closed`, the SDK closes the connection with status 1000, since the relay leaves it open.
 
-Ending: release adapter (§11.2), close connection/attempts, stop timers, cancel matching, reset room fields, publish `ended` + `endReason`, then emit `Ended`. An ended party may start over.
+A `lost` ending carries one of these errors:
 
-`close()` = `leave()` then release all; idempotent (TS clears listeners; Dart closes streams after queued `Ended`; Kotlin cancels its scope after answering attempts/rate restore; Swift finishes the `states()` and `events()` streams after queued `Ended`, and later calls return finished streams). It returns the release completion (§11.2). Afterwards `create`/`join` throw the state error, not a party error: Kotlin `IllegalStateException`, Dart `StateError`, TypeScript `Error`, Swift `PartyClosedError`.
+|error|when|
+|---|---|
+|`unreachable`|the resume window passed|
+|`resume_failed`, `client_blocked`|the relay refused the resume|
+|`invalid_message`|a new epoch came without a valid `media`. The SDK sends `leave` first.|
+
+#### How a party ends
+
+The SDK ends a party in these steps:
+
+1. It releases the adapter as §11.2 describes.
+2. It closes the connection and any attempts.
+3. It stops the timers.
+4. It cancels matching.
+5. It resets the room fields.
+6. It publishes `ended` and the `endReason`.
+7. It then emits `Ended`.
+
+An ended party may start over.
+
+#### Closing
+
+`close()` does what `leave()` does and then releases everything. It is idempotent. The release differs by language:
+
+|language|what `close()` releases|
+|---|---|
+|TypeScript|It clears the listeners.|
+|Dart|It closes the streams after a queued `Ended`.|
+|Kotlin|It cancels its scope after attempts are answered and the rate is restored.|
+|Swift|It finishes the `states()` and `events()` streams after a queued `Ended`. Later calls return finished streams.|
+
+`close()` returns the release completion of §11.2. Afterwards, `create` and `join` throw the language's state error, not a party error. That is `IllegalStateException` in Kotlin, `StateError` in Dart, `Error` in TypeScript and `PartyClosedError` in Swift.
 
 ## 8. Room state
 
-All relay input is checked before changing state; failures change nothing. Non-objects, non-string `type`, unknown `type`s: ignored.
+The relay sends the room's state as snapshots. This section defines how the SDK checks relay input, when it accepts a snapshot, how a new epoch starts, and how the SDK derives the host, the controller and the position.
 
-A snapshot (`room`, `joined.room`) is malformed if it fails `snapshot.schema.json`: not an object; any of `rev code epoch phase positionMs atMs rate control locked waitingOn participants` absent (nullables must be present); or a rule broken. "Int" = a JSON number integral as a double within ±(2^53 − 1) (`42.0` yes; strings/bools/null/`1e400` no). Rules (`SPEC.md` §8.2, §9.1, §13.1):
+The SDK checks all relay input before it changes any state, and input that fails changes nothing. The SDK ignores non-objects, a `type` that isn't a string, and unknown `type`s.
 
-- `rev` int ≥ 1; `code` `^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$`; `epoch`/`atMs` int ≥ 0; `phase` `idle`/`paused`/`waiting`/`playing`; `positionMs` int 0..604800000; `rate` number 0.5–2.0; `control` `host`/`everyone`; `locked` bool; `idle` needs `positionMs` 0.
-- `waitingOn`: distinct `^[A-Za-z0-9_-]{1,16}$` strings, non-empty only in `waiting`.
-- `action` (`room` only): absent, or an object with `kind` a non-empty string (open) and `by` present, null or a peer ID.
-- `participants`: non-empty, exactly one `host`. Each: `peerId` per pattern; `name` 1–32 code points, no forbidden char/unpaired surrogate; `client` 1–64, same, both sides of first `/` non-empty; `host`/`connected` bools; `player` `idle`/`loading`/`ready`/`buffering`; `match` present: null or {`state` `searching`/`matched`/`mismatched`/`unavailable`, `deltaMs` absent/int}; `offsetMs` int ±604800000.
+### Malformed snapshots
 
-Unknown members ignored. Unchecked: peer ID uniqueness, whether `waitingOn` and `action.by` name participants, `positionMs` vs duration, `code` vs own code, and a `room`'s `media` (checked only when its epoch is new, below).
+A snapshot is a `room` message or `joined.room`. It is malformed if it fails `snapshot.schema.json`, which is when any of these holds:
 
-Malformed or non-increasing-`rev` (per connection) `room`s drop; accepted ones replace the snapshot whole.
+- It is not an object.
+- One of `rev code epoch phase positionMs atMs rate control locked waitingOn participants` is absent. Nullable members must be present too.
+- It breaks one of the rules below.
 
-An accepted `room` whose `epoch` differs from the party's epoch must carry `media`, null or valid by §9.7; otherwise the SDK sends `leave`, closes 1000 and ends `lost` with `invalid_message`. With such a `media`, in order, the SDK replaces the snapshot, sets media and epoch, and starts the new epoch (§9.1); only then does it emit the snapshot's events (§15) and step (§11.1), as for `joined` (§7.3). A `media` member on a `room` of the party's own epoch is ignored, unchecked.
+In these rules, an "int" is a JSON number that is integral as a double and within ±(2^53 − 1). So `42.0` is an int, while strings, booleans, null and `1e400` are not. The rules come from `SPEC.md` §8.2, §9.1 and §13.1:
 
-Malformed `joined` (bad `code`; `you` not an object; bad `you.peerId`; `you.token` not `^[A-Za-z0-9_-]{43}$`; `serverTime` not int ≥ 0; bad `room`/`media`): for create/join — `leave`, close 1000, call fails `invalid_message`, no fallback; for a reconnect's `resume` — no `leave`, close 1000, the attempt failed (§14).
+|member|rule|
+|---|---|
+|`rev`|an int ≥ 1|
+|`code`|matches `^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$`|
+|`epoch`, `atMs`|ints ≥ 0|
+|`phase`|`idle`, `paused`, `waiting` or `playing`|
+|`positionMs`|an int from 0 to 604800000, and 0 when `phase` is `idle`|
+|`rate`|a number from 0.5 to 2.0|
+|`control`|`host` or `everyone`|
+|`locked`|a boolean|
+|`waitingOn`|distinct strings matching `^[A-Za-z0-9_-]{1,16}$`, non-empty only in `waiting`|
+|`action`|in a `room` only: absent, or an object as described below|
+|`participants`|non-empty, with exactly one entry whose `host` is true, and each entry as described below|
 
-Other schema failures are ignored: `pong` (`serverTime` int ≥ 0), `error` (`code`/`message` strings, `code` non-empty, `re` present null/string), `closed` (`reason` non-empty). A bad `pong` is no sample (§5–§6).
+An `action` object has a `kind` that is a non-empty string, an open set. Its `by` is present, and either null or a peer ID.
 
-The party's epoch is the `epoch` of the last `joined` or accepted `room` processed; epochs are compared only for equality, never for order.
+Each entry of `participants` follows these rules:
 
-Own entry = first `participants` match on peer ID (maybe absent). Host: entry with `host` true. Controller: host, or entry present and `control` = `everyone`.
+|member|rule|
+|---|---|
+|`peerId`|matches the peer ID pattern `^[A-Za-z0-9_-]{1,16}$`|
+|`name`|1–32 code points, with no forbidden character and no unpaired surrogate|
+|`client`|1–64 code points under the same rules, and non-empty on both sides of its first `/`|
+|`host`, `connected`|booleans|
+|`player`|`idle`, `loading`, `ready` or `buffering`|
+|`match`|present, and either null or a match object as described below|
+|`offsetMs`|an int within ±604800000|
 
-Position `P(t)` (`SPEC.md` §12.2, current `durationMs`): playing → `min(durationMs, floor(positionMs + max(0, t − atMs) × rate))` (product its own double, floor of sum); else `positionMs` uncapped. Running: `playing` and `t ≥ atMs`. `roomPositionMs()` = `P(now)`, no offset; null without media, snapshot or clock sample. Vectors: `timeline.json`, `room-check.json`.
+A match object has a `state` of `searching`, `matched`, `mismatched` or `unavailable`. Its `deltaMs` is absent or an int.
+
+Unknown members are ignored. The check leaves these unchecked:
+
+- whether peer IDs are unique
+- whether `waitingOn` and `action.by` name participants
+- `positionMs` against the duration
+- `code` against the party's own code
+- a `room`'s `media`, which is checked only when its epoch is new, as described below
+
+### Accepting a room
+
+The SDK drops a `room` that is malformed, or whose `rev` doesn't increase. It compares `rev` per connection. An accepted `room` replaces the snapshot whole.
+
+An accepted `room` whose `epoch` differs from the party's epoch must carry `media`, either null or valid by §9.7. Otherwise the SDK sends `leave`, closes the connection with status 1000, and ends the party as `lost` with `invalid_message`.
+
+With such a `media`, the SDK goes through these steps in order:
+
+1. It replaces the snapshot.
+2. It sets the media and the epoch.
+3. It starts the new epoch as §9.1 describes.
+4. Only then does it emit the snapshot's events (§15) and step (§11.1), as for `joined` in §7.3.
+
+A `media` member on a `room` of the party's own epoch is ignored, unchecked.
+
+### Malformed `joined`
+
+A `joined` is malformed when any of these holds:
+
+- `code` is not a valid room code.
+- `you` is not an object, or `you.peerId` is not a valid peer ID.
+- `you.token` doesn't match `^[A-Za-z0-9_-]{43}$`.
+- `serverTime` is not an int ≥ 0.
+- `room` or `media` is malformed.
+
+The SDK handles a malformed `joined` according to what it answers:
+
+- For `create` or `join`, the SDK sends `leave`, closes the connection with code 1000 and fails the call with `invalid_message`. There is no fallback.
+- For a reconnect's `resume`, the SDK closes with code 1000 without sending `leave`, and the attempt has failed (§14).
+
+### Other messages
+
+The SDK ignores other messages that fail their schema:
+
+- A `pong` needs `serverTime` to be an int ≥ 0. A bad `pong` gives no clock sample (§5–§6).
+- An `error` needs `code` and `message` to be strings, with `code` non-empty, and `re` present as null or a string.
+- A `closed` needs a non-empty `reason`.
+
+### Epoch and roles
+
+The party's epoch is the `epoch` of the last `joined` or accepted `room` it processed. Epochs are compared only for equality, never for order.
+
+The party's own entry is the first entry in `participants` with its peer ID. A snapshot may have none. The host is the entry whose `host` is true. The party is a controller when it is the host, or when its own entry is present and `control` is `everyone`.
+
+### Position
+
+The room position at relay time t is `P(t)`, as `SPEC.md` §12.2 defines it, with the current `durationMs`. While `playing`, it is `min(durationMs, floor(positionMs + max(0, t − atMs) × rate))`. The product is its own double, and the floor applies to the sum. In any other phase, `P(t)` is `positionMs`, uncapped.
+
+The room is running when it is `playing` and `t ≥ atMs`.
+
+`roomPositionMs()` returns `P(now)`, without the offset. It returns null when there is no media, no snapshot or no clock sample.
+
+The vectors are in `timeline.json` and `room-check.json`.
 
 ## 9. Matching
 
+When the room gets new media, each participant needs its own copy of the title. This section defines when matching runs, how the SDK ranks and walks the resolver's candidates, what each outcome sets, and which descriptors the SDK accepts.
+
 ### 9.1 When matching runs
 
-Matching runs on every new epoch: an accepted `room` of another epoch (§8), a `joined` answering `create` or `join`, and a reconnect's `joined` only when its epoch differs (§14). Each new epoch first cancels any matching (resolver call and probes in flight, results ignored), sets the offset 0 (§13), `choice`/`mismatch` null, `candidates` empty. Then:
+Matching runs on every new epoch. A new epoch comes with:
 
-- Media null: `match` null; adapter unbound and, when attached, paused once (§10.2). Unbinding doesn't discard queued commands; the pause queues behind them.
-- Own media — the descriptor equals, as parsed JSON (unknown members outside `ext` dropped, order ignored), the one this party last sent in `setMedia`: `match` = `{"state": "matched", "deltaMs": 0}`; `choice` = candidate `id` `""` with that `setMedia`'s `ref` and the descriptor's `durationMs`; the attached adapter binds at once when its ref equals that `ref` (§10.2); no pause, no resolver call. "Last sent" is recorded at the call, kept if the relay refuses it, survives `clearMedia` and others' media, resets only at the party's end; equality is by value, so another host's identical descriptor is own media again. The choice persists through the epoch.
-- Other media: adapter unbound and paused once when attached, `match` = `{"state": "searching"}`, then resolver and walk (§9.4, §9.5).
+- an accepted `room` of another epoch, as §8 describes
+- a `joined` answering `create` or `join`
+- a reconnect's `joined`, only when its epoch differs, as §14 says
 
-`resolveAgain()` searches again for the current epoch; it does nothing without media or when the current epoch is the party's own media (decided when the epoch starts). It cancels matching in flight (resolver call and probes) and never touches the offset. With `choice` null it reruns the other-media steps as on a new epoch, minus the offset reset and minus any adapter action (nothing is bound): `match` `searching`, `mismatch` null, `candidates` empty until the resolver answers, then the walk. With `choice` set it runs only the resolver and ranking (§9.4) and replaces `candidates` with the result, `deltaMs` from a counting `durationMs` only, else null; no probes, no walk. `choice`, `match`, `mismatch`, binding and the adapter stay unchanged, and the app offers the new list for `choose`. `ResolveFailed` and the resolve timeout apply to both; a failed call leaves `candidates` empty.
+Each new epoch first cancels any matching, which means the resolver call and probes in flight, and ignores their results. It sets the offset of §13 to 0, sets `choice` and `mismatch` to null and empties `candidates`. What follows depends on the media.
+
+#### No media
+
+When the media is null, `match` becomes null. The adapter is unbound and, when one is attached, paused once, as §10.2 describes. Unbinding doesn't discard queued commands, and the pause queues behind them.
+
+#### Own media
+
+The media is the party's own when the descriptor equals the one this party last sent in `setMedia`. The two are compared as parsed JSON, with unknown members outside `ext` dropped and member order ignored. For own media:
+
+- `match` becomes `{"state": "matched", "deltaMs": 0}`.
+- `choice` becomes a candidate with `id` `""`, that `setMedia`'s `ref` and the descriptor's `durationMs`.
+- The attached adapter binds at once when its ref equals that `ref`, by the binding rule of §10.2.
+- Nothing is paused, and the resolver isn't called.
+
+The choice persists through the epoch.
+
+"Last sent" is recorded at the `setMedia` call, and kept if the relay refuses it. It survives `clearMedia` and others' media, and resets only at the party's end. Equality is by value, so another host's identical descriptor is own media again.
+
+#### Other media
+
+For any other media, the adapter is unbound and, when one is attached, paused once. `match` becomes `{"state": "searching"}`. The SDK then calls the resolver, ranks the candidates by §9.4 and walks them by §9.5.
+
+#### Searching again
+
+`resolveAgain()` searches again for the current epoch. It does nothing without media, or when the current epoch is the party's own media, as decided when the epoch started. Otherwise it cancels matching in flight, meaning the resolver call and probes. It never touches the offset.
+
+With `choice` null, it reruns the other-media steps as on a new epoch, minus the offset reset and minus any adapter action, since nothing is bound. `match` becomes `searching`, `mismatch` becomes null, and `candidates` stays empty until the resolver answers. Then the walk runs.
+
+With `choice` set, it runs only the resolver and the ranking of §9.4, and replaces `candidates` with the result. A `deltaMs` there comes from a counting `durationMs` only, and is null otherwise. There are no probes and no walk. `choice`, `match`, `mismatch`, the binding and the adapter stay unchanged, and the app offers the new list for `choose`.
+
+`ResolveFailed` and the resolve timeout apply in both cases. A failed call leaves `candidates` empty.
 
 ### 9.2 Resolver and candidates
 
-`resolve(media)` returns the app's candidates in its order of preference, once per search, cancelled per §9.1. A throw or a call longer than the resolve timeout (§2) means no candidates (on timeout the SDK also cancels), and the SDK emits `ResolveFailed` with the thrown error or the language's timeout error (§16.8); a cancelled call emits none. In TypeScript a non-array answer is no candidates, without `ResolveFailed`. A party without a resolver (§16.2: none passed) never searches: for any other participant's media its `candidates` is empty and its `match` is `unavailable` from the start of the epoch, so its first `status` there already says `unavailable` (§9.6, §10.3).
+#### The resolver
 
-A candidate (§16.5) has a unique `id`; optional `durationMs`; optional hints `sizeBytes`, `oshash`, `name`; optional async `probe` (opens the file, returns its duration or nothing, closes it); and `ref`, handed back with `choice`. `probe` runs only without a counting `durationMs`; the SDK cancels unneeded probes, which then release what they opened; a throwing probe returned nothing, also when what it throws is a cancellation of its own, such as the probe's own timeout, while the SDK hasn't cancelled it.
+`resolve(media)` returns the app's candidates in its order of preference. The SDK calls it once per search, and cancels it as §9.1 says.
 
-A duration counts only as an integer 1..604800000; any other value is none (a bad `durationMs` probes if it can; a bad probe answer is a returned nothing). No duration and no `probe` is never chosen.
+A call that throws, or takes longer than the resolve timeout of §2, means no candidates. On a timeout the SDK also cancels the call. In both cases the SDK emits `ResolveFailed`, with the thrown error or the language's timeout error from §16.8. A cancelled call emits none. In TypeScript, an answer that isn't an array means no candidates, without `ResolveFailed`.
 
-Identity is the resolver's job for every kind: it returns the files it takes for this title, and `sameTitle` (§9.3) helps it decide. The SDK never applies a same-title or same-file rule while matching; ranking orders the candidates (§9.4) and the walk's duration tolerance decides (§9.5). An own-name `media.ext` member MAY shortcut the search: a member naming a known server and item is looked up there (§9.7).
+A party without a resolver never searches. That is a party constructed without one, as §16.2 allows. For any other participant's media, its `candidates` is empty and its `match` is `unavailable` from the start of the epoch. So its first `status` there already says `unavailable` (§9.6, §10.3).
+
+#### Candidates
+
+A candidate, the `Candidate` type of §16.5, has these members:
+
+|member|what it is|
+|---|---|
+|`id`|a unique ID|
+|`ref`|the app's reference to the file, handed back with `choice`|
+|`durationMs`|optional: the file's duration|
+|`sizeBytes`, `oshash`, `name`|optional hints|
+|`probe`|optional and async: opens the file, returns its duration or nothing, and closes it|
+
+A `probe` runs only when there is no counting `durationMs`. The SDK cancels probes it no longer needs, and these then release what they opened.
+
+A probe that throws has returned nothing. That holds even when what it throws is a cancellation of its own, such as the probe's own timeout, while the SDK hasn't cancelled it.
+
+A duration counts only as an integer from 1 to 604800000, and any other value counts as none. A candidate with a bad `durationMs` is probed if it can be, and a bad probe answer counts as a returned nothing. A candidate with no duration and no `probe` is never chosen.
+
+#### Identity
+
+Identity is the resolver's job, for every kind. The resolver returns the files it takes for this title, and the `sameTitle` of §9.3 helps it decide.
+
+The SDK never applies a same-title or same-file rule while matching. The ranking of §9.4 orders the candidates, and the walk's duration tolerance of §9.5 decides.
+
+A `media.ext` member under the app's own name MAY shortcut the search. A member naming a known server and item is looked up there, as §9.7 allows.
 
 ### 9.3 Same title
 
-`sameTitle(a, b)` implements this rule for resolvers comparing descriptors; it is symmetric, and `SPEC.md` §16.5 points here. Same title only when `kind`s are equal:
+`sameTitle(a, b)` implements this rule for resolvers that compare descriptors. It is symmetric, and `SPEC.md` §16.5 points here.
 
-- `movie`: some namespace of `imdb`, `tmdb`, `tvdb`, `plex`, `anilist`, `anidb`, `kitsu`, `mal` has the same non-empty value in both `ids` (same namespace only, exact compare, others don't count).
-- `episode`: as `movie` on own `ids` (a shared episode ID beats differing numbers); otherwise, unless some namespace of that list has different non-empty values in the two own `ids` (differing episode IDs beat equal numbers), both have `series` sharing an ID as `movie` and `season`/`episode` present in both and equal.
-- `video`: both have `file` and `oshash`es equal ignoring ASCII case, or `sizeBytes` present and equal in both and `name`s equal ignoring ASCII case. IDs don't count.
+Two descriptors are the same title only when their `kind`s are equal. Then the rule depends on the kind:
 
-Vectors: `same-title.json`.
+- `movie`: some namespace of `imdb`, `tmdb`, `tvdb`, `plex`, `anilist`, `anidb`, `kitsu` and `mal` has the same non-empty value in both `ids`. The value must be in the same namespace in both and match exactly. Other namespaces don't count.
+- `episode`: the rules below apply in order.
+- `video`: both have a `file`. Either their `oshash`es are equal ignoring ASCII case, or `sizeBytes` is present and equal in both and their `name`s are equal ignoring ASCII case. IDs don't count.
+
+Two episodes are the same title by the first of these that applies:
+
+1. If their own `ids` share an ID as for `movie`, they are the same title. A shared episode ID beats differing numbers.
+2. If some namespace of that list has different non-empty values in the two own `ids`, they are not. Differing episode IDs beat equal numbers.
+3. Otherwise they are the same title when both have a `series`, the two `series` share an ID as for `movie`, and `season` and `episode` are present in both and equal.
+
+The vectors are in `same-title.json`.
 
 ### 9.4 Ranking
 
-Sort the candidates stably by: `oshash` equal ignoring ASCII case; `sizeBytes` equal; `name` equal ignoring ASCII case; counting `durationMs` before not; then smaller `|durationMs − media.durationMs|`. Full ties keep resolver order. The keys apply to every kind and drop no candidate; without `file` all tie on the first three.
+The SDK sorts the candidates stably by these keys, in order. The first three compare a candidate's hints with the descriptor's `file`, and candidates with an equal value sort first.
+
+1. `oshash` equal, ignoring ASCII case
+2. `sizeBytes` equal
+3. `name` equal, ignoring ASCII case
+4. a counting `durationMs` before none
+5. smaller `|durationMs − media.durationMs|`
+
+Full ties keep the resolver's order. The keys apply to every kind and drop no candidate. Without a `file`, all candidates tie on the first three keys.
 
 ### 9.5 The walk
 
-In ranked order: a counting `durationMs` is the duration; else probe unless 4 probes have counted or one has missed its deadline. Probes run one at a time, sharing 60000 ms; a probe's deadline is the budget left at its start (inclusive), measured in local time and spent from the budget; it is cancelled at budget-left + 1 ms. A missed deadline: cancelled, not counted, no delta, no further probes. A failed, empty or non-counting probe skips the candidate and counts toward the 4. Counting `durationMs` candidates are still checked after probes run out.
+The walk goes through the candidates in ranked order and finds a duration for each:
 
-`delta = duration − media.durationMs`; `|delta| ≤ 1500` matches and stops the walk — first in ranked order wins, even over a closer later one. Else keep the closest so far, earlier on ties.
+- A counting `durationMs` is the duration.
+- Otherwise the SDK probes, unless 4 probes have counted or one has missed its deadline.
 
-Published `candidates`: empty until the resolver answers, then all ranked as `Ranked {candidate, deltaMs}` (counting durations from the walk's start, probed ones on a timely counting answer, else null). The list survives the outcome and `acceptMismatch`/`declineMismatch`/`choose`; only a new epoch or `resolveAgain()` replaces it (§9.1). Vectors: `matching.json`.
+#### Probes
+
+Probes run one at a time and share 60000 ms. A probe's deadline is the budget left at its start, inclusive. Its time is measured on the local clock and spent from the budget. The SDK cancels it at the budget left + 1 ms.
+
+A probe that misses its deadline is cancelled and not counted. It gives no delta, and no further probes run. A failed, empty or non-counting probe skips its candidate and counts toward the 4. Candidates with a counting `durationMs` are still checked after the probes run out.
+
+#### Matching a duration
+
+For each duration the SDK computes `delta = duration − media.durationMs`. A candidate with `|delta| ≤ 1500` matches and stops the walk. The first match in ranked order wins, even over a closer later one. Otherwise the SDK keeps the closest candidate so far, the earlier one on ties.
+
+#### Published candidates
+
+`candidates` is empty until the resolver answers. Then it holds all candidates, ranked, as `Ranked {candidate, deltaMs}`. A counting duration gives its `deltaMs` from the walk's start. A probed candidate gets one on a timely counting answer. Otherwise `deltaMs` is null.
+
+The list survives the outcome, `acceptMismatch`, `declineMismatch` and `choose`. Only a new epoch or `resolveAgain()` replaces it, as §9.1 says.
+
+The vectors are in `matching.json`.
 
 ### 9.6 Outcomes
 
-Matched: `choice` set, `match` = `{"state": "matched", "deltaMs": delta}`, `mismatch` null. None matched, some had a duration: `mismatch` = `{candidate: closest, deltaMs: delta}`, `match` = `{"state": "searching", "deltaMs": delta}`, `choice` null. None had a duration: `match` = `{"state": "unavailable"}`, both null.
+The walk ends in one of three outcomes:
 
-`acceptMismatch()` sets `choice` to the offer, `match` = `{"state": "mismatched", "deltaMs": delta}`, clears `mismatch`, leaves offset. `declineMismatch()` sets `match` = `{"state": "unavailable", "deltaMs": delta}`, clears both. Both no-op without a pending `mismatch`. Binding follows §10.2: an outcome binds an attached adapter whose ref equals the new `choice.ref`.
+|outcome|`choice`|`match`|`mismatch`|
+|---|---|---|---|
+|a candidate matched|set to it|`{"state": "matched", "deltaMs": delta}`|null|
+|none matched, but some had a duration|null|`{"state": "searching", "deltaMs": delta}`|`{candidate: closest, deltaMs: delta}`|
+|none had a duration|null|`{"state": "unavailable"}`|null|
 
-`choose(candidate)` takes a file from `candidates` or anywhere else the app finds one (any matching state, media present incl. own; without media, false). Its duration comes from a counting `durationMs` (§9.2) or one probe outside the walk budget/count, with no deadline. False, changing nothing, when: neither; probe fails/empty/non-counting; superseded or matching cancelled. Latest `choose` wins, cancelling earlier probes (answers ignored); cancelling matching does the same. With a duration and still current: cancel walk and prompt, set `choice` to the given candidate, also when it has the current choice's `id` (a refreshed `ref` replaces the old one), `match` = `matched` (|delta| ≤ 1500) or `mismatched`, with `deltaMs`, offset unchanged, return true. Binding follows §10.2: an attached adapter whose ref differs from the new `choice.ref` unbinds, without a pause.
+#### Answering a mismatch
+
+A pending `mismatch` waits for the user. Besides `choose` below, two calls answer it:
+
+- `acceptMismatch()` sets `choice` to the offer and `match` to `{"state": "mismatched", "deltaMs": delta}`. It clears `mismatch` and leaves the offset.
+- `declineMismatch()` sets `match` to `{"state": "unavailable", "deltaMs": delta}` and clears both `choice` and `mismatch`.
+
+Both do nothing without a pending `mismatch`. Binding follows §10.2: an outcome binds an attached adapter whose ref equals the new `choice.ref`.
+
+#### Choosing a file
+
+`choose(candidate)` takes a file from `candidates`, or from anywhere else the app finds one. It works in any matching state while media is present, own media included. Without media, it returns false.
+
+The duration comes from a counting `durationMs` as §9.2 defines it, or from one probe outside the walk's budget and count, with no deadline. `choose` returns false, changing nothing, in these cases:
+
+- The candidate has neither.
+- The probe fails, returns nothing or returns a non-counting duration.
+- The call is superseded, or matching is cancelled.
+
+The latest `choose` wins and cancels earlier probes, whose answers are ignored. Cancelling matching does the same.
+
+With a duration, and while the call is still current, `choose` goes through these steps:
+
+1. It cancels the walk and the mismatch prompt.
+2. It sets `choice` to the given candidate, also when it has the current choice's `id`, so a refreshed `ref` replaces the old one.
+3. It sets `match` to `matched` when |delta| ≤ 1500, or else to `mismatched`, with `deltaMs`.
+4. It leaves the offset unchanged and returns true.
+
+Binding follows §10.2: an attached adapter whose ref differs from the new `choice.ref` unbinds, without a pause.
 
 ### 9.7 Descriptors are untrusted
 
-A descriptor comes from another participant via a relay; every string and all of `ext` is untrusted.
+A descriptor comes from another participant through a relay. Every string in it, and all of `ext`, is untrusted.
 
-Senders MUST NOT put anything that locates or fetches media in any field, `ext` included (`SPEC.md` §10); nobody checks this. Resolvers MUST treat descriptors as search terms only — never a path, URL, host, shell/SQL fragment or format string. `file.name` is only compared with names the app found itself, never opened. Any `ext` member can be forged: use it only to look up the app's own library/catalogue, never to choose where to connect or what to fetch. Apps show titles and names as plain text only.
+#### Senders and resolvers
 
-The SDK checks descriptors it sends (`checkMedia`/`setMedia`) and receives (`room` and `joined`):
+Senders MUST NOT put anything that locates or fetches media in any field, `ext` included, as `SPEC.md` §10 says. Nobody checks this.
 
-- a JSON object; `kind` exactly `movie`/`episode`/`video`; `series` present for `episode` (optional, checked, otherwise);
-- `title` (required) and `series.title` (required within `series`): ≥ 1 code point, no forbidden character, no unpaired surrogate;
-- `year`/`series.year` ints within ±(2^53 − 1); `season`/`episode`/`file.sizeBytes` ints ≥ 0; `durationMs` (required) int 1..604800000;
-- `ids`/`series.ids`: objects with non-empty string values, any member names;
-- `file.oshash` matches `^[0-9a-f]{16}$`; `file.name`: ≥ 1 code point, no forbidden character or unpaired surrogate, no `/`/`\`, not `.`/`..`;
-- `ext`: object, member names matching `^[a-z0-9-]+(\.[a-z0-9-]+)+$`, values any JSON, nested names free apart from surrogates;
-- `series`/`file` when present are objects; wrong type (null included for non-nullables) fails;
-- no unpaired surrogate in `ids`/`series.ids` names and values, or any `ext` string incl. member names;
-- unknown members outside `ext` ignored (unchecked, unkept, unsent).
+Resolvers MUST treat descriptors as search terms only. A descriptor value is never a path, URL, host, shell or SQL fragment, or format string. These rules also apply:
 
-Send only: descriptor ≤ 4096 bytes, `ext` ≤ 1024, on the SDK's compact JSON of its `Media` (known members only, absent omitted, ints integral, no whitespace, non-ASCII as UTF-8; `ext` measured alone) — the exact text `setMedia` sends, so a passing descriptor stays within the relay's as-received limit. Empty `ids`/`series.ids` may be omitted when sending; receivers treat absent and empty alike. Receipt skips sizes (the relay measured as received). Send failure: `checkMedia` returns the first rule broken, `setMedia` throws `invalid_message`, sends nothing. Receive failure makes a `joined` malformed and ends the party on a new epoch's `room` (§8). Vectors: `media-check.json`.
+- `file.name` is only compared with names the app found itself, and never opened.
+- Any `ext` member can be forged. Use it only to look up the app's own library or catalogue, never to choose where to connect or what to fetch.
+- Apps show titles and names as plain text only.
+
+#### Checks
+
+The SDK checks the descriptors it sends, through `checkMedia` and `setMedia`, and those it receives in `room` and `joined`. A valid descriptor follows all of these rules:
+
+- It is a JSON object.
+- `kind` is exactly `movie`, `episode` or `video`.
+- `series` is present for `episode`. For other kinds it is optional, and checked when present.
+- `title` is required, and so is `series.title` within `series`. Each is at least 1 code point, with no forbidden character and no unpaired surrogate.
+- `year` and `series.year` are ints within ±(2^53 − 1). `season`, `episode` and `file.sizeBytes` are ints ≥ 0.
+- `durationMs` is required, and an int from 1 to 604800000.
+- `ids` and `series.ids` are objects with non-empty string values, and any member names.
+- `file.oshash` matches `^[0-9a-f]{16}$`.
+- `file.name` is at least 1 code point, with no forbidden character and no unpaired surrogate. It contains no `/` or `\`, and is not `.` or `..`.
+- `ext` is an object whose member names match `^[a-z0-9-]+(\.[a-z0-9-]+)+$`. Its values can be any JSON, and nested names are free apart from surrogates.
+- `series` and `file`, when present, are objects. A wrong type fails, and null counts as a wrong type for members that aren't nullable.
+- No unpaired surrogate appears in the member names and values of `ids` and `series.ids`, or in any `ext` string, member names included.
+- Unknown members outside `ext` are ignored: they are not checked, not kept and not sent.
+
+#### Size limits
+
+Sending adds two limits: the descriptor is at most 4096 bytes, and `ext` at most 1024. Both are measured on the SDK's compact JSON of its `Media`, with `ext` measured alone. That JSON:
+
+- holds known members only, and omits absent ones
+- writes ints as integral numbers
+- has no whitespace
+- writes non-ASCII characters as UTF-8
+
+It is the exact text `setMedia` sends, so a passing descriptor stays within the relay's limit, which the relay measures as received.
+
+Empty `ids` and `series.ids` may be omitted when sending, and receivers treat absent and empty alike. Receipt skips the sizes, since the relay measured them as received.
+
+#### Failures
+
+When a descriptor fails before sending, `checkMedia` returns the first rule it breaks. `setMedia` throws `invalid_message` and sends nothing.
+
+When a received descriptor fails, it makes a `joined` malformed. On a new epoch's `room`, it ends the party as §8 describes.
+
+The vectors are in `media-check.json`.
 
 ## 10. Status
 
+Each participant tells the room how its player is doing with `status` messages. This section defines the fields, how the SDK derives the player state, and when it sends.
+
 ### 10.1 Fields
+
+A `status` carries these fields:
 
 |field|value|
 |---|---|
 |`epoch`|the epoch (§8)|
 |`player`|§10.2|
-|`match`|§9; null while the room has no media|
+|`match`|§9, or null while the room has no media|
 |`offsetMs`|the offset (§13)|
-|`rttMs`|the clock's best round trip; absent before the first sample|
+|`rttMs`|the clock's best round trip, absent before the first sample|
 
-`rttMs` is read at send time and never compared: a change of `rttMs` alone never sends a `status`.
+`rttMs` is read at send time and never compared. A change of `rttMs` alone never sends a `status`.
 
 ### 10.2 Player state
 
-Four facts decide `player`: attached (an adapter is attached), away (set by `detachPlayer`, unless it names an adapter that isn't attached; cleared by `attachPlayer`; false from the start of every `create` or `join` attempt (§7.2) and after the end; kept across a reconnect), bound and blocked (below).
+Four facts decide `player`: whether an adapter is attached, whether the party is away, and whether the adapter is bound and blocked. Binding and blocking are described below.
 
-`attachPlayer(player, ref)` attaches `player` as the player of `ref`: the `ref` of the file the player has open, normally `state.choice.ref` exactly as published or, as host, the `ref` passed to `setMedia`. Another attached adapter is released first (§11.2); the adapter already attached keeps its lane and queued commands and takes the new `ref`. It clears away, re-evaluates binding and steps (§11.1). It works while `idle` or `ended` too, and an adapter attached then stays attached into the next session (§7.2). The app attaches once per file it opens, and again after a release while the player still has that file open: the party's end releases the adapter (§7.4), so an app that keeps its player open after `Ended` attaches it again, before or after the next `create` or `join`. `detachPlayer(player?)` without an argument releases the attached adapter (§11.2), unbinds and sets away; it works with no adapter attached and doesn't pause the adapter. With an argument it does so only when that adapter is the one attached, else it changes nothing. Both return the release completion (§11.2).
+Away is set by `detachPlayer`, unless that call names an adapter that isn't attached. It is cleared by `attachPlayer`. It is false from the start of every `create` or `join` attempt of §7.2 and after the end, and it is kept across a reconnect.
 
-Bound is a condition, re-evaluated whenever one of its inputs changes: an adapter is attached; `choice` is non-null and its `ref` equals the attached ref (Kotlin and Dart `==`, Swift `==` of `Ref: Equatable`, TypeScript `===`); `match.state` is `matched` or `mismatched` for the current epoch; and no `setMedia` of this party is pending. Every new epoch unbinds first, then re-evaluates (§9.1). When the condition turns true (binding), nudging is off, the applied rate becomes the room rate, and when the adapter can set rates one `setRate` of that rate is queued; afterwards the SDK tracks the rate it last set. When it turns false (unbinding), the play timer stops (§11.2) and queued commands stay. So the SDK never commands a player that holds another file: an open that finished late for a superseded choice attaches without binding, and an attached player already playing `choice.ref` binds as soon as matching publishes that choice.
+#### Attaching and detaching
 
-`setMedia` is pending from the call until an accepted `room` with a new epoch, a `joined` with a new epoch, or an `error` with `re` `setMedia`; the call unbinds without a pause. A reconnect's `joined` with the same epoch sends it again or ends it (§14). When it stops being pending, binding is re-evaluated and the SDK steps. So a host may call `setMedia(media, ref)` and `attachPlayer(player, ref)` in either order.
+`attachPlayer(player, ref)` attaches `player` as the player of `ref`. The `ref` is that of the file the player has open. Normally that is `state.choice.ref` exactly as published, or, as host, the `ref` passed to `setMedia`.
 
-Blocked means the player refused to start: it turns true when a `play` the SDK issued on the bound adapter throws and the adapter then reads `paused`, as a browser does when its autoplay policy wants a user gesture. It turns false when the adapter reads not `paused`, on unbinding, and when the room's `phase` isn't `playing`. When it turns true the SDK emits `PlayBlocked` (§15). The step still issues `play` (§11.2); the app asks the user to start the player with the player's own control, which a browser counts as a gesture.
+Another attached adapter is released first, as §11.2 describes. The adapter already attached keeps its lane and queued commands, and takes the new `ref`. `attachPlayer` clears away, re-evaluates binding and steps as §11.1 says.
 
-`player` is the first that applies:
+`attachPlayer` works while `idle` or `ended` too, and an adapter attached then stays attached into the next session (§7.2).
 
-1. no media → `idle`;
-2. `match.state` is `unavailable` → `idle`;
-3. away → `idle`;
-4. not bound → `loading`;
-5. bound and the first frame isn't shown, or a seek the SDK issued is queued or running → `loading`;
-6. bound, the room is `playing` and relay time is unknown → `loading`;
-7. held (§11.2) and `|position − holdAt| > max(500, seek accuracy)` → `loading`;
-8. blocked → `loading`;
-9. buffering → `buffering` when the room is running (§8) and not held, else `loading`;
-10. otherwise `ready`.
+The app attaches once per file it opens. It attaches again after a release while the player still has that file open. The party's end releases the adapter, as §7.4 says, so an app that keeps its player open after `Ended` attaches it again, before or after the next `create` or `join`.
 
-An app that takes part without playing calls `detachPlayer()` after each join. `ready` here means able to play at once and close enough that following needs no seek (`SPEC.md` §7.5, §16.4).
+`detachPlayer(player?)` without an argument releases the attached adapter as §11.2 describes, unbinds and sets away. It works with no adapter attached, and it doesn't pause the adapter. With an argument, it does so only when that adapter is the one attached, and otherwise changes nothing. Both forms return the release completion of §11.2.
+
+#### Binding
+
+Bound is a condition, re-evaluated whenever one of its inputs changes. The adapter is bound when all of these hold:
+
+- An adapter is attached.
+- `choice` is non-null, and its `ref` equals the attached ref. Kotlin and Dart compare with `==`, Swift with `==` of `Ref: Equatable`, and TypeScript with `===`.
+- `match.state` is `matched` or `mismatched` for the current epoch.
+- No `setMedia` of this party is pending.
+
+Every new epoch unbinds first, then re-evaluates, as §9.1 says.
+
+When the condition turns true, the adapter binds. Nudging is off, and the applied rate becomes the room rate. When the adapter can set rates, one `setRate` of that rate is queued. Afterwards the SDK tracks the rate it last set.
+
+When the condition turns false, the adapter unbinds. The play timer of §11.2 stops, and queued commands stay.
+
+So the SDK never commands a player that holds another file. An open that finished late for a superseded choice attaches without binding. An attached player already playing `choice.ref` binds as soon as matching publishes that choice.
+
+#### Pending setMedia
+
+`setMedia` is pending from the call until one of these arrives: an accepted `room` with a new epoch, a `joined` with a new epoch, or an `error` with `re` `setMedia`. The call unbinds without a pause. A reconnect's `joined` with the same epoch sends it again or ends it, as §14 describes.
+
+When it stops being pending, the SDK re-evaluates binding and steps. So a host may call `setMedia(media, ref)` and `attachPlayer(player, ref)` in either order.
+
+#### Blocked
+
+Blocked means the player refused to start. It turns true when a `play` the SDK issued on the bound adapter throws and the adapter then reads `paused`. A browser does this when its autoplay policy wants a user gesture. When blocked turns true, the SDK emits the `PlayBlocked` event of §15.
+
+Blocked turns false when the adapter's `paused` reads false, on unbinding, and when the room's `phase` isn't `playing`.
+
+The step of §11.2 still issues `play`. The app asks the user to start the player with the player's own control, which a browser counts as a gesture.
+
+#### The reported value
+
+`player` is the value of the first rule that applies:
+
+1. With no media, it is `idle`.
+2. When `match.state` is `unavailable`, it is `idle`.
+3. When away, it is `idle`.
+4. When not bound, it is `loading`.
+5. When bound and the first frame isn't shown, or a seek the SDK issued is queued or running, it is `loading`.
+6. When bound, the room is `playing` and relay time is unknown, it is `loading`.
+7. When held (§11.2) and `|position − holdAt| > max(500, seek accuracy)`, it is `loading`.
+8. When blocked, it is `loading`.
+9. When buffering, it is `buffering` if the room is running as §8 defines it and not held, and `loading` otherwise.
+10. Otherwise it is `ready`.
+
+Here `ready` means what `SPEC.md` §7.5 and §16.4 define: able to play at once, and close enough that following needs no seek. An app that takes part without playing calls `detachPlayer()` after each join.
 
 ### 10.3 When to send
 
-The SDK sends `status` right after every `joined`, with the last-sent values cleared; when `epoch`, `player`, `match` or `offsetMs` differs from the last `status` sent on this connection; and 15000 ms after the last `status`, the heartbeat restarted by every send. At most one `status` goes out per 250 ms: a change inside the spacing goes out when the 250 ms are up, with the values of that moment, if they still differ. A `status` whose `epoch` differs from the last one sent skips the spacing. No `status` is sent while reconnecting, and its timers stop at the drop. The SDK reads the adapter on every tick (§11.1), on `playerChanged()` and once the attached adapter's lane is empty.
+The SDK sends `status` at these times:
 
-The first `status` of a new epoch decides this participant's part in the room's wait: `idle` takes it out, `loading` keeps the room waiting, and `ready` stops it holding the room. A user who won't open the new media is taken out of the wait by `detachPlayer()` or `declineMismatch()` as soon as the app knows.
+- right after every `joined`, with the last-sent values cleared
+- when `epoch`, `player`, `match` or `offsetMs` differs from the last `status` sent on this connection
+- 15000 ms after the last `status`, a heartbeat that every send restarts
+
+At most one `status` goes out per 250 ms. A change inside the spacing goes out when the 250 ms are up, with the values of that moment, if they still differ. A `status` whose `epoch` differs from the last one sent skips the spacing.
+
+No `status` is sent while reconnecting, and the status timers stop at the drop. The SDK reads the adapter on every tick of §11.1, on `playerChanged()` and once the attached adapter's lane is empty.
+
+The first `status` of a new epoch decides this participant's part in the room's wait:
+
+- `idle` takes it out of the wait.
+- `loading` keeps the room waiting.
+- `ready` stops it holding the room.
+
+A user who won't open the new media is taken out of the wait by `detachPlayer()` or `declineMismatch()`, as soon as the app knows.
 
 ## 11. Following the room
 
+While an adapter is bound, the SDK keeps the player in step with the room. This section defines when the SDK steps, what a step does, and how it releases an adapter.
+
 ### 11.1 When the SDK steps
 
-A step runs only while an adapter is bound, media is present and relay time is known. It runs every 500 ms — the tick starts at the first `joined` and runs until the party ends, also while reconnecting — and at once after an accepted snapshot, `attachPlayer`, the attached adapter becoming bound (§10.2: a match, `choose`, `acceptMismatch` or the own media's `room` setting the choice to its `ref`), `setOffset`, `playerChanged()`, the end of a command hold, and when the play timer fires.
+A step runs only while an adapter is bound, media is present and relay time is known. It runs every 500 ms on the tick, which starts at the first `joined` and runs until the party ends, also while reconnecting.
 
-Each adapter has its own command lane: its commands run one at a time, in order, each awaited, and a failing command is ignored since the next step corrects it. Lanes of different adapters never wait for each other. No step starts while a command on the attached adapter's lane is queued or running; a step requested meanwhile is remembered as one flag and runs once that lane's last queued command finishes; several requests become one step. No step runs during a command hold (§12); its end runs one.
+A step also runs at once after any of these:
 
-The step's inputs are the room's `phase`, `positionMs`, `atMs` and `rate`; the media's `durationMs`; relay time now; the offset (§13); the adapter's position, `paused`, `buffering`, `durationMs`, seek accuracy and whether it can set rates; the applied rate; whether the SDK is nudging; and the milliseconds since the SDK last issued a seek on this adapter, on the local clock, null when never.
+- an accepted snapshot
+- `attachPlayer`
+- the attached adapter becoming bound by §10.2, through a match, `choose`, `acceptMismatch` or the own media's `room` setting the choice to its `ref`
+- `setOffset`
+- `playerChanged()`
+- the end of a command hold
+- the play timer firing
+
+#### Command lanes
+
+Each adapter has its own command lane. Its commands run one at a time, in order, and each is awaited. A failing command is ignored, since the next step corrects it. Lanes of different adapters never wait for each other.
+
+No step starts while a command on the attached adapter's lane is queued or running. A step requested meanwhile is remembered as one flag, and runs once that lane's last queued command finishes. Several requests become one step.
+
+No step runs during a command hold of §12, and the hold's end runs one.
+
+#### Inputs
+
+A step reads these inputs:
+
+- the room's `phase`, `positionMs`, `atMs` and `rate`
+- the media's `durationMs`
+- relay time now
+- the offset of §13
+- the adapter's position, `paused`, `buffering`, `durationMs`, seek accuracy and whether it can set rates
+- the applied rate
+- whether the SDK is nudging
+- the milliseconds since the SDK last issued a seek on this adapter, on the local clock, or null when it never has
 
 ### 11.2 The step
+
+A step compares the player with the room, and queues the commands that bring it back in line:
 
 ```
 if phase is idle: no action; nudging = false; stop.
@@ -386,17 +920,42 @@ seek(clamp(target + 250))    if seek
 play                         if the adapter is paused
 ```
 
-Here `P(now)` is the room position of §8 and `rate` the room's. Each product and quotient is its own double (§2). A `setRate` action's rate is rounded to 6 decimals, and the applied rate becomes that rounded value. Actions run in the order pause, setRate, seek, play, each queued as §11.1 says; issuing a seek records its time (for `cooled`), and it counts as in flight from then until it finishes (§10.2). Step seeks never go past the end margin.
+Here `P(now)` is the room position of §8, and `rate` is the room's. Each product and quotient is its own double, as §2 requires. A `setRate` action's rate is rounded to 6 decimals, and the applied rate becomes that rounded value.
 
-`a` is the adapter's `seekAccuracyMs` (§16.4), read at every step: how far from the requested position a seek may land, such as a player's keyframe distance. A value that isn't an integer ≥ 0 counts as 0. It raises every seek threshold, here and in §10.2; the nudge thresholds (350, 150) and the seek lead don't change. A player that can't seek at all declares a very large value and is followed by rate only.
+Actions run in the order pause, setRate, seek, play, each queued as §11.1 says. Issuing a seek records its time, for `cooled`. From then until it finishes, the seek counts as in flight for §10.2. Step seeks never go past the end margin.
 
-A step that holds with `playIn` starts a one-shot play timer for `playIn` ms that runs a step; each step replaces or cancels it, unbinding cancels it, and delays are clamped as §2 says.
+#### Seek accuracy
 
-Releasing an adapter — `detachPlayer`, `attachPlayer` with another adapter, or the party's end — drops its commands that haven't started; a running one finishes on its lane with its outcome ignored; if the SDK was nudging, one `setRate` of the room rate, captured at that moment, is queued on the released lane and runs, also after `close()`; nothing else reaches that adapter. `detachPlayer` and `close()` return a completion (§16.8) that settles, never failing, once no released adapter has a command running or queued, at once when none has. An adapter command must finish or throw; until it does, the completion waits. An app awaits it before disposing a player. Vectors: `reconcile.json`.
+`a` is the adapter's `seekAccuracyMs` of §16.4, read at every step. It says how far from the requested position a seek may land, such as a player's keyframe distance. A value that isn't an integer ≥ 0 counts as 0.
+
+`a` raises every seek threshold, here and in §10.2. The nudge thresholds, 350 and 150, and the seek lead don't change. A player that can't seek at all declares a very large value, and is followed by rate only.
+
+#### The play timer
+
+A step that holds with `playIn` starts a one-shot play timer for `playIn` ms, which runs a step. Each step replaces or cancels the timer, and unbinding cancels it. Its delay is clamped as §2 says.
+
+#### Releasing an adapter
+
+Three things release an adapter: `detachPlayer`, `attachPlayer` with another adapter, and the party's end. On release:
+
+- The adapter's commands that haven't started are dropped.
+- A command already running finishes on its lane, and its outcome is ignored.
+- If the SDK was nudging, one `setRate` of the room rate, captured at that moment, is queued on the released lane. It runs, also after `close()`.
+- Nothing else reaches that adapter.
+
+`detachPlayer` and `close()` return a completion, whose type §16.8 gives per language. It settles, never failing, once no released adapter has a command running or queued, and at once when none has. An adapter command must finish or throw, and until it does, the completion waits. An app awaits the completion before disposing a player.
+
+The vectors are in `reconcile.json`.
 
 ## 12. Local commands
 
-The user's controls go through the party; a change made behind the party's back is undone by the next step. Positions the app passes and reads from its adapter are in its own file's timeline; the SDK subtracts the offset (§13) before sending. Commands don't wait for the relay: a refusal arrives as an `Error` event (§15), the SDK doesn't undo local effects, and the next step does. `setOffset` (§13) is a local setting, not a command.
+The user's controls go through the party. A change made behind the party's back is undone by the next step.
+
+Positions the app passes, and those it reads from its adapter, are in its own file's timeline. The SDK subtracts the offset of §13 before sending.
+
+Commands don't wait for the relay. A refusal arrives as an `Error` event of §15. The SDK doesn't undo the local effects. The next step does. `setOffset` is a local setting of §13, not a command.
+
+Each command checks its preconditions, applies its local effect and sends one message:
 
 |method|checks before sending|local effect|sends|
 |---|---|---|---|
@@ -404,7 +963,7 @@ The user's controls go through the party; a change made behind the party's back 
 |`pause()`|member, media, controller|the adapter pauses|`pause`, `positionMs` = max(0, adapter position − offset) when bound, else absent|
 |`seek(ms)`|member, media, controller, `ms` an int ≥ 0, `ms − offset` and the sent position ints (§2)|the adapter seeks to `ms`|`seek`, `positionMs` = max(0, `ms` − offset)|
 |`setRate(rate)`|member, media, controller, 0.5 ≤ rate ≤ 2.0|the adapter takes `rate` when it can|`rate`|
-|`setMedia(media, ref, positionMs = 0)`|member, host, descriptor, `positionMs ≥ 0`|marks the descriptor as the party's own, with `ref` as its file (§9.1); unbinds the adapter until its epoch arrives (§10.2)|`setMedia`|
+|`setMedia(media, ref, positionMs = 0)`|member, host, descriptor, `positionMs ≥ 0`|marks the descriptor as the party's own, with `ref` as its file (§9.1), and unbinds the adapter until its epoch arrives (§10.2)|`setMedia`|
 |`clearMedia()`|member, host|none|`clearMedia`|
 |`setControl(mode)`|member, host|none|`setControl`|
 |`transferHost(peerId)`|member, host, a participant with that peer ID|none|`transferHost`|
@@ -412,45 +971,165 @@ The user's controls go through the party; a change made behind the party's back 
 |`lock(locked)`|member, host|none|`lock`|
 |`end()`|member, host|none|`end`|
 
-The check order is member, then media, then controller, then values; and member, then host, then the descriptor, value or participant. Local effects touch the adapter only while bound. A `seek` command's local seek is unclamped and counts as an SDK seek for the cooldown and `loading`; `pause` also checks its computed `positionMs` (§2); `setRate` rejects NaN; `setMedia` sends `positionMs` as given, since the new media's timeline is the host's own file. A participant check accepts connected and disconnected entries and doesn't refuse the party itself. A failed check throws without sending and before any local effect: `not_in_room` when not connected, reconnecting included; `forbidden` when not host or not a controller (§8); and `invalid_message` for no media, a value out of range or not an int, a computed wire value that isn't a valid int, a peer ID not in the room, or a descriptor failing §9.7.
+### Checks
 
-After `pause`, `seek` or `setRate`, bound or not, no step runs until the next accepted `room` carrying `action` (§8), an `error` with `re` `pause`, `seek` or `rate` respectively, or 2000 ms pass, so snapshots already in flight don't pull the player back. A new command replaces the hold, and its end runs a step. There is never a hold after `play`, `setMedia` or the host commands.
+The checks run in a fixed order. For `play`, `pause`, `seek` and `setRate` it is member, then media, then controller, then values. For the other commands it is member, then host, then the descriptor, value or participant.
+
+Local effects touch the adapter only while it is bound. Some commands have details of their own:
+
+- A `seek` command's local seek is unclamped. It counts as an SDK seek for the cooldown and for `loading`.
+- `pause` also checks its computed `positionMs`, as §2 requires.
+- `setRate` rejects NaN.
+- `setMedia` sends `positionMs` as given, since the new media's timeline is the host's own file.
+
+A participant check accepts connected and disconnected entries, and doesn't refuse the party itself.
+
+A failed check throws without sending and before any local effect. The error tells which check failed:
+
+- `not_in_room` means the party isn't connected, which includes reconnecting.
+- `forbidden` means the party isn't the host, or isn't a controller as §8 defines it.
+- `invalid_message` covers no media, and a value out of range or not an int. It also covers a computed wire value that isn't a valid int, a peer ID not in the room, and a descriptor failing §9.7.
+
+### The command hold
+
+After `pause`, `seek` or `setRate`, bound or not, a command hold starts. No step runs until one of these happens:
+
+- The next accepted `room` carrying an `action` of §8 arrives.
+- An `error` arrives with `re` `pause`, `seek` or `rate`, matching the command.
+- 2000 ms pass.
+
+The hold keeps snapshots already in flight from pulling the player back. A new command replaces the hold, and the hold's end runs a step. There is never a hold after `play`, `setMedia` or the host commands.
 
 ## 13. Offset
 
-Local position = room position + offset (`SPEC.md` §16.4). A positive offset means the user's file is ahead, with extra footage before the same scene, such as a longer intro.
+The offset shifts the user's file against the room. The local position is the room position plus the offset, as `SPEC.md` §16.4 defines.
 
-`setOffset(ms)` takes an integer from −604800000 to 604800000 inclusive; anything else throws `invalid_message` and changes nothing. It needs neither a room nor media and works while idle or reconnecting, but a value set outside a room is reset by the next `joined`. The offset becomes 0 on every new epoch (§9.1); a resumed `joined` with the same epoch and `resolveAgain()` keep it.
+A positive offset means the user's file is ahead, with extra footage before the same scene, such as a longer intro.
+
+`setOffset(ms)` takes an integer from −604800000 to 604800000 inclusive. Anything else throws `invalid_message` and changes nothing. It needs neither a room nor media, and it works while idle or reconnecting. But a value set outside a room is reset by the next `joined`.
+
+The offset becomes 0 on every new epoch, as §9.1 says. A resumed `joined` with the same epoch keeps it, and so does `resolveAgain()`.
 
 Apps that allow mismatched files SHOULD offer the offset control, with steps of 100 ms and 1 s, a reset, and the mismatch's `deltaMs` as a hint.
 
 ## 14. Reconnect and resume
 
-The member connection closing or failing is a drop: every close status other than 4000 counts (1001, 1007 and 1009 among them, `SPEC.md` Appendix B), and so does a close without a status. After `closed` and after `leave()` the SDK closed the link itself, so no drop is seen, and status 4000 ends the party as `replaced` (§7.4). When no message has arrived for 15 s — every received message, `pong` included, re-arms the timer — the SDK closes the connection with status 1000 and treats it as a drop with no status.
+A dropped connection doesn't end the party. The SDK reconnects and resumes the session for as long as the resume window allows.
 
-On the drop, `connection` becomes `reconnecting`, the status timers stop, the window timer starts and attempt 1 is scheduled. Attempt n waits floor(min(8000, 500 × 2^(n−1)) × (0.5 + 0.5u)) ms, with u one draw from the injectable source (§16.8): attempt 1 waits from the drop and attempt n from the failure of attempt n−1. Each attempt connects to the URL the party joined on, starts a new clock and sends `{type: resume, code, peerId, token}`. A failed connection (HTTP 429/503 included), an open timeout, no answer in time (§7.1), the connection closing before the switch, a malformed `joined` (§8), or any `error` other than `resume_failed` or `client_blocked` is a failed attempt: the SDK closes that connection with 1000 and schedules the next attempt.
+### Drops
 
-The window is 300000 ms (§2), measured from the drop; when it passes the party ends with `lost` and error `unreachable`. On `joined` the party is connected again and §7.3 applies, the media handled as a new epoch only when its epoch changed. On `resume_failed` or `client_blocked` the party ends with `lost` carrying that error and never joins again on its own.
+The member connection closing or failing is a drop. Every close status other than 4000 counts, including 1001, 1007 and 1009 from `SPEC.md` Appendix B. So does a close without a status.
 
-A `setMedia` still pending (§10.2) when a reconnect's `joined` has the epoch the party had before the drop never reached the room. If that snapshot lists this party as host, the SDK sends the same `setMedia` again right after the `status` of §7.3 and it stays pending; otherwise it stops being pending.
+After `closed` and after `leave()`, the SDK has closed the link itself, so it sees no drop. Status 4000 ends the party as `replaced`, a reason of §7.4.
 
-While reconnecting the SDK keeps stepping against the last snapshot and the old clock; it switches to the new connection's snapshot and clock together once that connection has both `joined` and a clock sample. Commands throw `not_in_room` (§12). When the party ends while a resume attempt is under way, a connection that already sent `resume` is kept until its answer or the connect timeout, and a `joined` is answered with `leave`, as §7.2 treats a cancelled `create` or `join`.
+When no message has arrived for 15 s, the SDK closes the connection with status 1000 and treats it as a drop with no status. Every received message, `pong` included, re-arms this timer.
+
+### Attempts
+
+On the drop, `connection` becomes `reconnecting`, the status timers stop, the window timer starts and attempt 1 is scheduled.
+
+Attempt n waits floor(min(8000, 500 × 2^(n−1)) × (0.5 + 0.5u)) ms, with u one draw from the injectable source of §16.8. Attempt 1 waits from the drop, and attempt n from the failure of attempt n−1.
+
+Each attempt connects to the URL the party joined on, starts a new clock and sends `{type: resume, code, peerId, token}`. An attempt fails on any of these:
+
+- a failed connection, HTTP 429 and 503 included
+- an open timeout
+- no answer in time, as §7.1 defines it
+- the connection closing before the switch
+- a malformed `joined` (§8)
+- any `error` other than `resume_failed` or `client_blocked`
+
+After a failed attempt, the SDK closes that connection with status 1000 and schedules the next attempt.
+
+### Outcomes
+
+The resume window of §2 is 300000 ms, measured from the drop. When it passes, the party ends with `lost` and the error `unreachable`.
+
+On `joined`, the party is connected again and §7.3 applies. The media is handled as a new epoch only when its epoch changed.
+
+On `resume_failed` or `client_blocked`, the party ends with `lost` carrying that error. It never joins again on its own.
+
+### A pending setMedia
+
+A `setMedia` still pending (§10.2) when a reconnect's `joined` has the epoch from before the drop never reached the room. If that snapshot lists this party as host, the SDK sends the same `setMedia` again right after the `status` of §7.3, and it stays pending. Otherwise it stops being pending.
+
+### While reconnecting
+
+While reconnecting, the SDK keeps stepping against the last snapshot and the old clock. It switches to the new connection's snapshot and clock together, once that connection has both `joined` and a clock sample. Commands throw `not_in_room`, as §12 says.
+
+When the party ends while a resume attempt is under way, a connection that already sent `resume` is kept until its answer arrives or the connect timeout passes. A `joined` is then answered with `leave`, as §7.2 treats a cancelled `create` or `join`.
 
 ## 15. Events
 
-SDK 1.x has seven events: `Action`, `ParticipantJoined`, `ParticipantLeft`, `Error`, `ResolveFailed`, `PlayBlocked` and `Ended` (§16.8 for their names per language). A later 1.x may add events: apps handle `PartyEvent` non-exhaustively, with an `else`/`default` branch that ignores unknown events, and TypeScript listeners ignore unknown `type`s. The wire enums `Phase`, `Control`, `PlayerState`, `MatchState` and `MediaKind` are fixed for protocol v1, and `Connection` and `EndReason` for SDK 1.x. Every subscriber gets every event emitted while it is subscribed, in order, never dropped or merged: TypeScript calls listeners synchronously from a copy of the set and rethrows a throwing listener asynchronously while the others still run; Dart delivers asynchronously and a paused subscription buffers; in Swift each `events()` call is its own `AsyncStream`, which buffers without limit, so a slow reader still gets every event in order.
+The party reports what happens through events, and everything else through its state.
 
-`Action` fires after an accepted `room` carrying `action` (§8); `joined` never produces one. It carries `kind` (a string, an open enum), `byPeerId` (null for the relay), `by` (that peer's entry in this snapshot, null when absent), `byMe` (`byPeerId` is this party's peer ID), and the accepted snapshot as `room`.
+SDK 1.x has seven events:
 
-`ParticipantJoined` and `ParticipantLeft` report a peer ID appearing in or disappearing from `participants` between two accepted snapshots, including a reconnect's `joined` against the pre-drop snapshot but not a `joined` answering `create` or `join`; `ParticipantLeft` carries the last known entry. For one snapshot the order is all `ParticipantJoined` in new-snapshot order, then all `ParticipantLeft` in old-snapshot order, then `Action`.
+|event|what it reports|
+|---|---|
+|`Action`|an accepted `room` carrying `action`|
+|`ParticipantJoined`|a peer ID appearing in `participants`|
+|`ParticipantLeft`|a peer ID disappearing from `participants`|
+|`Error`|a relay `error` on the member connection|
+|`ResolveFailed`|a resolver that threw or timed out (§9.2)|
+|`PlayBlocked`|a player that refused to start (§10.2)|
+|`Ended`|the party's end, with its reason (§7.4)|
 
-`Error` carries every relay `error` on the member connection: a refused command (§12), `status` or `ping`, or one with `re` null. Answers to `create`, `join` and `resume` don't produce it; those calls or attempts fail instead. `ResolveFailed` reports a resolver that threw or timed out (§9.2). `PlayBlocked` reports that the player refused to start (§10.2) and carries the error the adapter's `play` threw; the app asks the user to press play on the player itself. `Ended` carries its reason (§7.4) and an error that is non-null only for `lost`.
+§16.8 gives their names per language.
 
-The rest is state, not events: being host is `state.isHost`, reconnecting is `state.connection`, and a kick is `Ended` with `kicked`.
+### Compatibility
 
-Every SDK error carries `code`, `message` and `re`. For a relay refusal, `message` is the relay's `error.message` and `re` its `re`; the `relay_full` that ends a `create` (§6) is the last relay's error, `message` and `re` included. An error the SDK raises itself, before or instead of sending — `room_not_found` after routing, `already_in_room`, `not_in_room`, `forbidden`, `invalid_message`, `invalid_code`, `unreachable` and `cancelled` — carries SDK English text and `re` null. Apps never show `message`; they map `code` to their own text, with a generic text for unknown codes.
+A later 1.x may add events. Apps handle `PartyEvent` non-exhaustively, with an `else` or `default` branch that ignores unknown events. TypeScript listeners ignore unknown `type`s.
 
-A `seek` toast shows `positionMs + offset`, the user's own timeline (§13).
+The wire enums `Phase`, `Control`, `PlayerState`, `MatchState` and `MediaKind` are fixed for protocol v1. `Connection` and `EndReason` are fixed for SDK 1.x.
+
+### Delivery
+
+Every subscriber gets every event emitted while it is subscribed, in order, and none is dropped or merged:
+
+- TypeScript calls listeners synchronously, from a copy of the set. It rethrows a throwing listener's error asynchronously, while the others still run.
+- Dart delivers asynchronously, and a paused subscription buffers.
+- In Swift, each `events()` call is its own `AsyncStream`, which buffers without limit. So a slow reader still gets every event in order.
+
+### The events
+
+`Action` fires after an accepted `room` carrying an `action` of §8. A `joined` never produces one. It carries:
+
+|field|value|
+|---|---|
+|`kind`|a string, an open enum|
+|`byPeerId`|the acting peer's ID, null for the relay|
+|`by`|that peer's entry in this snapshot, null when absent|
+|`byMe`|whether `byPeerId` is this party's peer ID|
+|`room`|the accepted snapshot|
+
+`ParticipantJoined` and `ParticipantLeft` report a peer ID appearing in or disappearing from `participants` between two accepted snapshots. That includes a reconnect's `joined`, compared with the pre-drop snapshot. It doesn't include a `joined` answering `create` or `join`. `ParticipantLeft` carries the last known entry.
+
+For one snapshot, the events come in this order:
+
+1. all `ParticipantJoined`, in new-snapshot order
+2. all `ParticipantLeft`, in old-snapshot order
+3. `Action`
+
+`Error` carries every relay `error` on the member connection. That is an error refusing a command of §12, a `status` or a `ping`, or an `error` with `re` null. Answers to `create`, `join` and `resume` don't produce it, since those calls or attempts fail instead.
+
+`PlayBlocked` carries the error the adapter's `play` threw. The app then asks the user to press play on the player itself.
+
+`Ended` carries its reason and an error that is non-null only for `lost`.
+
+The rest is state, not events. Being host is `state.isHost`, reconnecting is `state.connection`, and a kick is `Ended` with `kicked`.
+
+### Errors
+
+Every SDK error carries `code`, `message` and `re`. For a relay refusal, `message` is the relay's `error.message` and `re` is its `re`. The `relay_full` that ends a `create` in §6 is the last relay's error, `message` and `re` included.
+
+The SDK raises some errors itself, before or instead of sending: `room_not_found` after routing, `already_in_room`, `not_in_room`, `forbidden`, `invalid_message`, `invalid_code`, `unreachable` and `cancelled`. These carry the SDK's English text, and `re` null.
+
+Apps never show `message`. They map `code` to their own text, with a generic text for unknown codes.
+
+### Actions
+
+Each action `kind` describes what happened in the room, and an app can show a toast for it:
 
 |`kind`|`by`|what happened|example toast|
 |---|---|---|---|
@@ -460,22 +1139,26 @@ A `seek` toast shows `positionMs + offset`, the user's own timeline (§13).
 |`rate`|the presser|the room plays at `rate`|"Anna set the speed to 1.25×"|
 |`media`|the host|new media (`state.media` holds it) or none (`clearMedia`)|"Anna started Pilot" / "Anna stopped the video"|
 |`stall`|the stalled participant|the room waits for them|"Waiting for Anna"|
-|`ended`|none|the media reached its end; the room paused there|"Finished"|
+|`ended`|none|the media reached its end, and the room paused there|"Finished"|
 |`host`|the old host, or none|the participant with `host` true is the new host|"Ben is now the host"|
 |other|any|an action this SDK doesn't describe|nothing|
 
+A `seek` toast shows `positionMs + offset`, which is the user's own timeline of §13.
+
 ## 16. API
+
+This section defines the API the four SDKs share. It gives the names in §16.1, the types in §16.2–§16.6, what an app must do in §16.7, how each language expresses the API in §16.8 and the test seams in §16.9.
 
 ### 16.1 Concepts and names
 
-Each concept has one name in every SDK; only idioms differ (§16.8).
+Each concept has one name in every SDK. Only the idioms of §16.8 differ.
 
 |concept|name|what it is|
 |---|---|---|
 |party|`WatchParty`|one participant's session: connection, room state, matching, status, following|
 |relay list|`Relays`, `Relay`|a list source (§3) and one entry (`id`, `name`, `url`, `prefixes`)|
 |player adapter|`PlayerAdapter`|the app's player, read and commanded by the SDK (§16.4)|
-|resolver|`Resolver`|the app's search: `resolve(media)` → candidates|
+|resolver|`Resolver`|the app's search, where `resolve(media)` returns candidates|
 |candidate|`Candidate`|one file the user could play (§9.2), with the app's `ref` of type `T`|
 |ranked candidate|`Ranked`|a candidate of the walk and its `deltaMs` once known (§9.5)|
 |descriptor|`Media`, `Series`, `MediaFile`, `MediaKind`|the media descriptor of `SPEC.md` §10|
@@ -484,17 +1167,17 @@ Each concept has one name in every SDK; only idioms differ (§16.8).
 |participant|`Participant`|one entry of `participants`|
 |match|`Match`, `MatchState`|`{state, deltaMs}` as on the wire|
 |offered file|`Mismatch`|the closest candidate and its delta while the user decides|
-|enums|`Phase`, `Control`, `PlayerState`, `Connection`, `EndReason`|wire values, fixed for protocol v1; `Connection` and `EndReason` are the SDK's, fixed for SDK 1.x (§15)|
-|event|`PartyEvent`|`Action`, `ParticipantJoined`, `ParticipantLeft`, `Error`, `ResolveFailed`, `PlayBlocked`, `Ended`; a later 1.x may add more (§15)|
+|enums|`Phase`, `Control`, `PlayerState`, `Connection`, `EndReason`|wire values, fixed for protocol v1. `Connection` and `EndReason` are the SDK's, fixed for SDK 1.x (§15).|
+|event|`PartyEvent`|`Action`, `ParticipantJoined`, `ParticipantLeft`, `Error`, `ResolveFailed`, `PlayBlocked`, `Ended`. A later 1.x may add more (§15).|
 |error|`PartyException` (Kotlin, Dart), `PartyError` (TypeScript, Swift)|`code`, `message`, `re`|
 |cancellation|the language's own (§16.8)|how the SDK stops a resolver call or a probe|
 |transport, clock, randomness|the language's own (§16.8)|where sockets, HTTP GETs, local time and random numbers come from|
 
-Error codes are the relay's (`SPEC.md` Appendix A, an open set) plus `invalid_code`, `unreachable` and `cancelled`; they are strings, so a newer relay's code passes through.
+Error codes are the relay's open set of `SPEC.md` Appendix A, plus `invalid_code`, `unreachable` and `cancelled`. They are strings, so a newer relay's code passes through.
 
 ### 16.2 `WatchParty`
 
-Shown in Kotlin; §16.8 maps it to Dart, TypeScript and Swift.
+This is the party's API in Kotlin. §16.8 maps it to Dart, TypeScript and Swift.
 
 ```kotlin
 class WatchParty<T>(
@@ -541,16 +1224,26 @@ fun roomPositionMs(): Long?
 fun close(): Job                          // completes as detachPlayer's does
 ```
 
-`create()` returns the room code, 6 symbols unformatted. `choose` is §9.6.
+`create()` returns the room code as 6 symbols, unformatted. `choose` is described in §9.6.
 
-Top-level helpers:
+#### Helpers
 
-- `formatCode(code)` (§4.1);
-- `sameTitle(a, b)` (§9.3);
-- `checkMedia(media)`: null when the descriptor passes the send checks of §9.7, else the first rule it breaks. An app trims `file.name` or `ext` and checks again instead of getting `invalid_message`;
-- `parseMedia(json)`: the one descriptor decoder. It applies §9.7's receive checks (not the send-only sizes), returns a `Media` (TypeScript: a fresh frozen copy) and throws `invalid_message` on failure.
+The SDK also has four top-level helpers:
+
+|helper|what it does|
+|---|---|
+|`formatCode(code)`|formats a room code for display (§4.1)|
+|`sameTitle(a, b)`|tells whether two descriptors are the same title (§9.3)|
+|`checkMedia(media)`|returns null when the descriptor passes the send checks of §9.7, else the first rule it breaks|
+|`parseMedia(json)`|the one descriptor decoder. It applies the receive checks of §9.7.|
+
+With `checkMedia`, an app trims `file.name` or `ext` and checks again, instead of getting `invalid_message`.
+
+`parseMedia` doesn't apply the send-only sizes. It returns a `Media`, which in TypeScript is a fresh frozen copy, and throws `invalid_message` on failure.
 
 ### 16.3 `Relays`
+
+A `Relays` object is a list source of §3:
 
 ```kotlin
 class Relays {
@@ -569,6 +1262,8 @@ data class Relay(val id: String, val name: String, val url: String, val prefixes
 
 ### 16.4 `PlayerAdapter`
 
+The adapter is the app's player, as the SDK reads and commands it:
+
 ```kotlin
 interface PlayerAdapter {
     val positionMs: Long              // current position in the app's file
@@ -585,7 +1280,19 @@ interface PlayerAdapter {
 }
 ```
 
-Reads are cheap and synchronous; the SDK reads them on every tick (§11). Commands return when the player has done them; a `seek` that returns early makes the SDK measure mid-seek positions. A command must finish or throw: a hung one holds its lane and the release completion (§11.2). `play` throws when the player refuses to start, such as a browser blocking playback without a user gesture; the SDK then reports `loading` and emits `PlayBlocked` (§10.2). `canSetRate` may change while attached. `firstFrameShown` may stay false until the app's own start-up work is done; the SDK reports `loading` until then. `seekAccuracyMs` is how far from the requested position a seek may land: a player that seeks to keyframes declares its keyframe distance, and one that can't seek declares a very large value (§11.2). A 1.x release may add adapter members with defaults; §16.8 says how each language keeps that from breaking apps.
+#### Reads
+
+The reads are cheap and synchronous, since the SDK reads them on every tick of §11. `canSetRate` may change while attached. `firstFrameShown` may stay false until the app's own start-up work is done, and the SDK reports `loading` until then.
+
+#### Commands
+
+Commands return when the player has done them. A `seek` that returns early makes the SDK measure mid-seek positions. A command must finish or throw, because a hung one holds its lane and the release completion of §11.2.
+
+`play` throws when the player refuses to start, such as a browser blocking playback without a user gesture. The SDK then reports `loading` and emits `PlayBlocked` (§10.2).
+
+`seekAccuracyMs` is how far from the requested position a seek may land. A player that seeks to keyframes declares its keyframe distance, and one that can't seek declares a very large value, as §11.2 explains.
+
+A 1.x release may add adapter members with defaults. §16.8 says how each language keeps that from breaking apps.
 
 ### 16.5 `Resolver` and `Candidate`
 
@@ -607,7 +1314,7 @@ class Candidate<T>(
 data class Ranked<T>(val candidate: Candidate<T>, val deltaMs: Long?)
 ```
 
-The field rules are §9.2's.
+The field rules are those of §9.2.
 
 ### 16.6 `PartyState` and the room types
 
@@ -643,78 +1350,148 @@ data class Match(val state: MatchState, val deltaMs: Long?)
 data class Mismatch<T>(val candidate: Candidate<T>, val deltaMs: Long)
 ```
 
-State changes when a snapshot, the media, matching, the player state, the offset or the connection changes, and equal states aren't republished. Positions are read on demand through `roomPositionMs()` or the adapter.
+State changes when a snapshot, the media, matching, the player state, the offset or the connection changes. Equal states aren't republished. Positions are read on demand, through `roomPositionMs()` or the adapter.
 
-Published state is read-only. In TypeScript every published type (`PartyState`, `Room`, `Participant`, `Match`, `Mismatch`, `Ranked`, `Media`, `Series`, `MediaFile`, `Relay`, `Relays.list`) is deeply `readonly`, and the SDK deep-freezes every object and array it creates and publishes, once at creation: the snapshot, participants, media it parsed, match, mismatch, the ranked list and relay lists. It never freezes app objects (candidates, refs, adapters). In Kotlin and Dart the SDK keeps its own deep copy of every descriptor, list and map the app passes in, so changing the app's object afterwards changes nothing in the party, and the collections it publishes are unmodifiable. In Swift `state` is `private(set)`, and `Media` and every published type but `Candidate` (a class of constants) are value types, so neither side's later change reaches the other.
+#### Read-only state
 
-`Media` mirrors `SPEC.md` §10 field for field: `kind`, `title`, `year`, `ids`, `series`, `season`, `episode`, `durationMs`, `file`, `ext`. In Kotlin and Dart `Media` is an immutable value with `toJson()`; in TypeScript it is a plain object; in Swift it is a `struct` with `toJSON()`, which returns a `JSONValue`. `parseMedia` (§16.2) decodes; decoding and encoding keep unknown `ids` namespaces and every `ext` member unchanged, and drop unknown members outside `ext`, including inside `series` and `file`.
+Published state is read-only, and each language makes it so in its own way.
+
+In TypeScript, every published type is deeply `readonly`: `PartyState`, `Room`, `Participant`, `Match`, `Mismatch`, `Ranked`, `Media`, `Series`, `MediaFile`, `Relay` and `Relays.list`. The SDK deep-freezes every object and array it creates and publishes, once at creation. That covers the snapshot, participants, media it parsed, match, mismatch, the ranked list and relay lists. It never freezes app objects, such as candidates, refs and adapters.
+
+In Kotlin and Dart, the SDK keeps its own deep copy of every descriptor, list and map the app passes in. Changing the app's object afterwards changes nothing in the party. The collections the SDK publishes are unmodifiable.
+
+In Swift, `state` is `private(set)`. `Media` and every published type but `Candidate`, which is a class of constants, are value types. So neither side's later change reaches the other.
+
+#### Media
+
+`Media` mirrors `SPEC.md` §10 field for field: `kind`, `title`, `year`, `ids`, `series`, `season`, `episode`, `durationMs`, `file` and `ext`.
+
+In Kotlin and Dart, `Media` is an immutable value with `toJson()`. In TypeScript it is a plain object. In Swift it is a `struct` with `toJSON()`, which returns a `JSONValue`.
+
+The `parseMedia` helper of §16.2 decodes. Decoding and encoding keep unknown `ids` namespaces and every `ext` member unchanged. They drop unknown members outside `ext`, including inside `series` and `file`.
 
 ### 16.7 What apps must do
 
-Required:
+Every app does these things:
 
-- construct the party with a `Relays`, a true `client` name, the user's name and, to match other participants' media, a resolver (§16.2);
-- call `create()` or `join(code)`, show the code, and handle `Ended` (§15);
-- handle `PartyEvent` non-exhaustively, ignoring events it doesn't know (§15);
-- write a `PlayerAdapter` with the reads and `play`, `pause` and `seek`; in Dart, extend `PlayerAdapter` (§16.4, §16.8);
-- open `state.choice` whenever it changes and call `attachPlayer(player, ref)` once per opened file, with the `ref` of the file it opened (§10.2); a player already playing `choice.ref` isn't reopened, nor attached again while it is still attached;
-- after `Ended`, which releases the adapter, attach a player that still has its file open again, before or after the next `create` or `join` (§7.4, §10.2);
-- as host, call `setMedia(media, ref)` with the `ref` that reopens the shared file, and `attachPlayer(player, ref)` with that `ref` once it's open, in either order (§10.2);
-- call `detachPlayer()` when the user leaves the player or the app goes to the background;
-- await the completion of `detachPlayer` or `close()` before disposing a player (§11.2);
-- answer `state.mismatch` with `acceptMismatch()`, `declineMismatch()` or `choose(candidate)` (§9.6);
-- route the user's play, pause, seek and speed controls to the party (§12);
-- call `close()` when done with the party (§7.4).
+- It constructs the party with a `Relays`, a true `client` name and the user's name. To match other participants' media, it also passes a resolver (§16.2).
+- It calls `create()` or `join(code)`, shows the code, and handles `Ended` (§15).
+- It handles `PartyEvent` non-exhaustively, ignoring events it doesn't know (§15).
+- It writes a `PlayerAdapter` with the reads and `play`, `pause` and `seek`. In Dart, it extends `PlayerAdapter` (§16.4, §16.8).
+- It opens `state.choice` whenever it changes, and calls `attachPlayer(player, ref)` once per opened file, with the `ref` of the file it opened (§10.2). A player already playing `choice.ref` isn't reopened, nor attached again while it is still attached.
+- After `Ended`, which releases the adapter, it attaches a player that still has its file open again, before or after the next `create` or `join` (§7.4, §10.2).
+- As host, it calls `setMedia(media, ref)` with the `ref` that reopens the shared file, and `attachPlayer(player, ref)` with that `ref` once it's open. The two calls can come in either order (§10.2).
+- It calls `detachPlayer()` when the user leaves the player or the app goes to the background.
+- It awaits the completion of `detachPlayer` or `close()` before disposing a player (§11.2).
+- It answers `state.mismatch` with `acceptMismatch()`, `declineMismatch()` or `choose(candidate)` (§9.6).
+- It routes the user's play, pause, seek and speed controls to the party (§12).
+- It calls `close()` when done with the party (§7.4).
 
-Optional:
+These are optional:
 
-- `setRate` and `canSetRate` on the adapter: without them the SDK follows by seeking only;
-- `seekAccuracyMs` on the adapter, for a player that seeks to keyframes or can't seek (§11.2);
-- `durationMs` may be null: then the SDK doesn't protect the end of a shorter file;
-- `playerChanged()`: without it, changes reach the relay on the next tick;
-- probes: candidates may carry durations instead (§9.2);
-- the offset control (§13);
-- toasts from `Action`, participant events, host controls, `choose`, `resolveAgain`, `relayFor`, `formatCode`, `sameTitle`, `checkMedia`, `parseMedia`, and the transport, clock and randomness parameters.
+- `setRate` and `canSetRate` on the adapter. Without them, the SDK follows by seeking only.
+- `seekAccuracyMs` on the adapter, for a player that seeks to keyframes or can't seek (§11.2).
+- A known `durationMs` on the adapter. It may be null, and then the SDK doesn't protect the end of a shorter file.
+- `playerChanged()`. Without it, changes reach the relay on the next tick.
+- Probes. Candidates may carry durations instead (§9.2).
+- The offset control (§13).
+- Toasts from `Action`, and the participant events.
+- Host controls.
+- `choose`, `resolveAgain`, `relayFor`, `formatCode`, `sameTitle`, `checkMedia` and `parseMedia`.
+- The transport, clock and randomness parameters.
 
 ### 16.8 Per-language idioms
 
+This table maps each concept of §16.1–§16.7 to each language. Longer explanations follow the table.
+
 |concept|Kotlin|Dart|TypeScript|Swift|
 |---|---|---|---|---|
-|constructor|parameters as in §16.2; without a resolver, `scope` is passed by name|named parameters: `relays`, `client`, `name` required; `resolver`, `connect`, `nowMs`, `random` optional|`new WatchParty({relays, client, name, resolver?, connect?, nowMs?, random?})`|`init(relays:client:name:resolver:connect:clock:random:) throws`, `Ref: Equatable & Sendable`; the parameters after `name` have defaults|
-|`Relays`|`Relays.public(http)`, `Relays.at(http, baseUrl)`|`Relays.public({httpGet})`, `Relays.at(baseUrl)`|`Relays.public({httpGet?})`, `Relays.at(baseUrl)`|`Relays.public(httpGet:clock:)`, whose parameters have defaults; `Relays.at(_:) throws`|
-|transport|the app's Ktor `HttpClient` with WebSockets installed, given to `Relays`; the party opens its sockets with it, and the SDK makes its GETs through a copy configured with `followRedirects = false`, reading the body as a stream up to the limit|`connect: Future<WebSocket> Function(Uri)` (package `web_socket`) on the party; `httpGet: Future<String> Function(Uri, Cancellation)` on `Relays.public`; defaults: `dart:io` `HttpClient` with `followRedirects = false`, or the browser's `fetch` with `redirect: "error"`; elsewhere pass `httpGet`|`connect: (url: string) => WebSocket` on the party; `httpGet: (url: string, signal: AbortSignal) => Promise<string>` on `Relays.public`; the default uses `fetch` with `redirect: "error"` and the signal|`connect: WebSocketConnect` (`@MainActor (String) async throws -> any WebSocketConnection`, a text WebSocket with `receive`, `closeCode`, `send` and `close(code:)`) on the party; `httpGet: HTTPGet` (`@MainActor (String) async throws -> String`) on `Relays.public`; defaults: `urlSessionConnect` (`URLSessionWebSocketTask`) and `urlSessionGet` (`URLSession` without redirects, status 200 only, at most 65536 bytes); both stop when their task is cancelled|
-|clock|`clock: MonotonicClock` (`fun interface { fun nowMs(): Long }`); timers run on the scope's dispatcher, so a test dispatcher drives them|`nowMs: int Function()`; timers are `dart:async` `Timer`s, so `fake_async` drives them|`nowMs: () => number`; timers are `setTimeout`, so fake timers drive them|`clock: any PartyClock` on the party and on `Relays.public` (`@MainActor` protocol: `nowMs() -> Int64` and `schedule(afterMs:_:)`, which returns a cancel function); default `SystemClock` (`ContinuousClock` and `Task.sleep`); every SDK timer goes through it, so a virtual clock drives them|
-|randomness: each draw is one u in [0, 1), and the reconnect backoff (§14) is the only draw|`random: kotlin.random.Random`, u = `nextDouble()`|`random: Random` (`dart:math`), u = `nextDouble()`|`random: () => number` in [0, 1), u = `random()`|`random: any RandomNumberGenerator` (default `SystemRandomNumberGenerator()`), u = `Double.random(in: 0..<1, using:)`|
-|state|`state: StateFlow<PartyState<T>>`|`PartyState<T> get state` and `Stream<PartyState<T>> get states` (broadcast, emits on change)|`get state(): PartyState<T>` and `on("state", listener)`|`private(set) var state: PartyState<Ref>` and `states() -> AsyncStream<PartyState<Ref>>` (a new stream per call with every state published after it, in order)|
-|events|`events: SharedFlow<PartyEvent>` with an unbounded buffer: it never drops and never suspends the party|`Stream<PartyEvent> get events` (broadcast)|`on("event", listener)`; `on` returns an unsubscribe function|`events() -> AsyncStream<any PartyEvent>`: a new stream per call that buffers without limit, so it never drops and never suspends the party|
-|async work|`suspend` functions|`Future`s|`Promise`s|`async` functions; `create` and `join` are `async throws`|
-|player calls|`attachPlayer(player: PlayerAdapter, ref: T)`; `detachPlayer(player: PlayerAdapter? = null): Job`; `close(): Job`|`void attachPlayer(PlayerAdapter player, T ref)`; `Future<void> detachPlayer([PlayerAdapter? player])`; `Future<void> close()`|`attachPlayer(player: PlayerAdapter, ref: T): void`; `detachPlayer(player?: PlayerAdapter): Promise<void>`; `close(): Promise<void>`|`attachPlayer(_ player: any PlayerAdapter, ref: Ref)`; `detachPlayer(_ player: (any PlayerAdapter)? = nil) -> Task<Void, Never>`; `close() -> Task<Void, Never>`; the last two `@discardableResult`|
-|`PlayerAdapter`|`interface`; optional members have defaults; apps implement it|`abstract base class`; optional members have defaults; apps `extend` it, with `base` or `final` subclasses|an object type with optional members|`@MainActor` class-bound `protocol`; optional members have defaults in a protocol extension; apps implement it with a class|
-|`Resolver`|`fun interface Resolver<T>`|`abstract interface class Resolver<T>` with `resolve(media, cancel)`|an object `{ resolve(media, signal) }`|`struct Resolver<Ref>` made from a closure: `Resolver { media in … }`|
-|cancellation|coroutine cancellation of `resolve` and `probe`|`resolve(Media media, Cancellation cancel)` and `probe(Cancellation cancel)`; `Cancellation` has `bool isCancelled` and `Future<void> whenCancelled`|`resolve(media, signal: AbortSignal)` and `probe(signal: AbortSignal)`|Task cancellation of the task running the resolver closure or `probe` (`@MainActor @Sendable () async throws -> Int64?`)|
-|`PartyEvent`|non-sealed `interface` with nested `PartyEvent.Action`, `PartyEvent.ParticipantJoined`, …|`abstract final class` (not exhaustive, not implementable outside the library); subclasses take the names plus `Event` (`ActionEvent`, `ErrorEvent`, …)|union discriminated by `type`: `"action"`, `"participantJoined"`, `"participantLeft"`, `"error"`, `"resolveFailed"`, `"playBlocked"`, `"ended"`; listeners ignore other `type`s|`protocol PartyEvent: Sendable`; structs take the names plus `Event` (`ActionEvent`, `ErrorEvent`, …); apps match them with `as` casts and a `default:` branch|
-|enums|enum classes|enums|string literal unions|enums; the wire enums have `String` raw values|
-|errors|`PartyException`|`PartyException implements Exception`|`PartyError extends Error`|`struct PartyError: Error`; `code` is a `PartyError.Code`, a string wrapper with constants such as `.unreachable`|
-|integers|`Long`|`int`|`number` (integers up to 2^53 − 1)|`Int64`|
-|optional adapter rate control|`canSetRate` + `setRate` with defaults|`canSetRate` + `setRate` with defaults|optional `setRate?` method; present means it can set rates|`canSetRate` + `setRate` with defaults|
+|constructor|parameters as in §16.2, with `scope` passed by name when there is no resolver|named parameters, with `relays`, `client` and `name` required, and `resolver`, `connect`, `nowMs` and `random` optional|`new WatchParty({relays, client, name, resolver?, connect?, nowMs?, random?})`|`init(relays:client:name:resolver:connect:clock:random:) throws` with `Ref: Equatable & Sendable`. The parameters after `name` have defaults.|
+|`Relays`|`Relays.public(http)`, `Relays.at(http, baseUrl)`|`Relays.public({httpGet})`, `Relays.at(baseUrl)`|`Relays.public({httpGet?})`, `Relays.at(baseUrl)`|`Relays.public(httpGet:clock:)`, whose parameters have defaults, and `Relays.at(_:) throws`|
+|transport|the app's Ktor `HttpClient` with WebSockets installed, given to `Relays`|`connect: Future<WebSocket> Function(Uri)` from package `web_socket` on the party, and `httpGet: Future<String> Function(Uri, Cancellation)` on `Relays.public`|`connect: (url: string) => WebSocket` on the party, and `httpGet: (url: string, signal: AbortSignal) => Promise<string>` on `Relays.public`|`connect: WebSocketConnect` on the party, and `httpGet: HTTPGet` on `Relays.public`|
+|clock|`clock: MonotonicClock`, a `fun interface { fun nowMs(): Long }`. Timers run on the scope's dispatcher, so a test dispatcher drives them.|`nowMs: int Function()`. Timers are `dart:async` `Timer`s, so `fake_async` drives them.|`nowMs: () => number`. Timers are `setTimeout`, so fake timers drive them.|`clock: any PartyClock` on the party and on `Relays.public`, by default `SystemClock`|
+|randomness|`random: kotlin.random.Random`, with u from `nextDouble()`|`random: Random` from `dart:math`, with u from `nextDouble()`|`random: () => number` in [0, 1), with u from `random()`|`random: any RandomNumberGenerator`, by default `SystemRandomNumberGenerator()`, with u from `Double.random(in: 0..<1, using:)`|
+|state|`state: StateFlow<PartyState<T>>`|`PartyState<T> get state` and `Stream<PartyState<T>> get states`, a broadcast stream that emits on change|`get state(): PartyState<T>` and `on("state", listener)`|`private(set) var state: PartyState<Ref>` and `states() -> AsyncStream<PartyState<Ref>>`, a new stream per call with every state published after it, in order|
+|events|`events: SharedFlow<PartyEvent>` with an unbounded buffer, so it never drops and never suspends the party|`Stream<PartyEvent> get events`, a broadcast stream|`on("event", listener)`, where `on` returns an unsubscribe function|`events() -> AsyncStream<any PartyEvent>`, a new stream per call that buffers without limit, so it never drops and never suspends the party|
+|async work|`suspend` functions|`Future`s|`Promise`s|`async` functions, with `create` and `join` `async throws`|
+|player calls|`attachPlayer(player: PlayerAdapter, ref: T)`, `detachPlayer(player: PlayerAdapter? = null): Job` and `close(): Job`|`void attachPlayer(PlayerAdapter player, T ref)`, `Future<void> detachPlayer([PlayerAdapter? player])` and `Future<void> close()`|`attachPlayer(player: PlayerAdapter, ref: T): void`, `detachPlayer(player?: PlayerAdapter): Promise<void>` and `close(): Promise<void>`|`attachPlayer(_ player: any PlayerAdapter, ref: Ref)`, `detachPlayer(_ player: (any PlayerAdapter)? = nil) -> Task<Void, Never>` and `close() -> Task<Void, Never>`, the last two `@discardableResult`|
+|`PlayerAdapter`|an `interface` whose optional members have defaults, which apps implement|an `abstract base class` whose optional members have defaults. Apps `extend` it, with `base` or `final` subclasses.|an object type with optional members|a `@MainActor` class-bound `protocol`, whose optional members have defaults in a protocol extension. Apps implement it with a class.|
+|`Resolver`|`fun interface Resolver<T>`|`abstract interface class Resolver<T>` with `resolve(media, cancel)`|an object `{ resolve(media, signal) }`|`struct Resolver<Ref>` made from a closure, as in `Resolver { media in … }`|
+|cancellation|coroutine cancellation of `resolve` and `probe`|`resolve(Media media, Cancellation cancel)` and `probe(Cancellation cancel)`. `Cancellation` has `bool isCancelled` and `Future<void> whenCancelled`.|`resolve(media, signal: AbortSignal)` and `probe(signal: AbortSignal)`|Task cancellation of the task running the resolver closure or `probe`, which is a `@MainActor @Sendable () async throws -> Int64?`|
+|`PartyEvent`|non-sealed `interface` with nested `PartyEvent.Action`, `PartyEvent.ParticipantJoined`, …|`abstract final class`, not exhaustive and not implementable outside the library. Subclasses take the names plus `Event`, as in `ActionEvent` and `ErrorEvent`.|a union discriminated by `type`: `"action"`, `"participantJoined"`, `"participantLeft"`, `"error"`, `"resolveFailed"`, `"playBlocked"`, `"ended"`. Listeners ignore other `type`s.|`protocol PartyEvent: Sendable`. Structs take the names plus `Event`, as in `ActionEvent` and `ErrorEvent`. Apps match them with `as` casts and a `default:` branch.|
+|enums|enum classes|enums|string literal unions|enums, with `String` raw values for the wire enums|
+|errors|`PartyException`|`PartyException implements Exception`|`PartyError extends Error`|`struct PartyError: Error`, whose `code` is a `PartyError.Code`: a string wrapper with constants such as `.unreachable`|
+|integers|`Long`|`int`|`number`, for integers up to 2^53 − 1|`Int64`|
+|optional adapter rate control|`canSetRate` and `setRate` with defaults|`canSetRate` and `setRate` with defaults|an optional `setRate?` method, whose presence means it can set rates|`canSetRate` and `setRate` with defaults|
 |seek accuracy|`val seekAccuracyMs: Long get() = 0`|`int get seekAccuracyMs => 0`|optional `readonly seekAccuracyMs?: number`|`var seekAccuracyMs: Int64 { get }`, `0` by default|
-|published collections|read-only views not backed by a list the SDK still mutates|`List.unmodifiable`, `Map.unmodifiable`|deeply `readonly` types, frozen with `Object.freeze`|value types (`Array`, `Dictionary`): the app's copy never changes the party's|
+|published collections|read-only views not backed by a list the SDK still mutates|`List.unmodifiable` and `Map.unmodifiable`|deeply `readonly` types, frozen with `Object.freeze`|value types such as `Array` and `Dictionary`, so the app's copy never changes the party's|
 |`ext`|`JsonObject?`|`Map<String, Object?>?`|`Record<string, unknown>`|`[String: JSONValue]?`|
 |`setMedia`|`setMedia(media, ref, positionMs = 0)`|`setMedia(media, ref, {positionMs = 0})`|`setMedia(media, ref, positionMs = 0)`|`setMedia(_ media: Media, ref: Ref, positionMs: Int64 = 0) throws`|
-|`Media` JSON|`parseMedia(json: JsonElement): Media`; `toJson()`|`Media parseMedia(Object? json)`; `toJson()`|plain objects; `parseMedia(value: unknown): Media`|`parseMedia(_ json: JSONValue) throws -> Media`; `toJSON() -> JSONValue`; `JSONValue(parsing:)` reads JSON text|
-|threads|pass a single-threaded scope (Android: a Main scope) and call the party from that thread; the party, adapter calls and resolver calls run on its dispatcher|one isolate|one event loop|`@MainActor`: the party and `Relays` run on the main actor and call the adapter, resolver, clock and transport there|
+|`Media` JSON|`parseMedia(json: JsonElement): Media` and `toJson()`|`Media parseMedia(Object? json)` and `toJson()`|plain objects, and `parseMedia(value: unknown): Media`|`parseMedia(_ json: JSONValue) throws -> Media` and `toJSON() -> JSONValue`. `JSONValue(parsing:)` reads JSON text.|
+|threads|a single-threaded scope, on Android a Main scope|one isolate|one event loop|`@MainActor`|
 
-Each adapter type lets a 1.x release add a member with a default without breaking apps: Kotlin's interface members have defaults, Dart apps extend the base class, TypeScript members are optional, and Swift protocols get the default in a protocol extension. On a resolver timeout (§9.2) `ResolveFailed` carries Kotlin's `TimeoutCancellationException`, Dart's `TimeoutException`, Swift's `TimeoutError`, or in TypeScript a `DOMException` named `TimeoutError`. TypeScript also accepts plain values where a Promise is expected from adapter commands and the resolver.
+#### Transport
 
-A Swift `String` can't hold an unpaired surrogate, so `name`, `client` and descriptors from a Swift app never carry one, and the refusal of §7.1 and §9.7 before sending holds by the type. The SDK reads relay messages with its own JSON reader, which turns an unpaired surrogate escape into U+FFFD and marks it, so the receive checks still refuse it; `JSONValue(parsing:)` throws `invalid_message` on one.
+The Kotlin party opens its sockets with the app's `HttpClient`. The SDK makes its GETs through a copy configured with `followRedirects = false`, and reads the body as a stream up to the limit.
+
+Dart's defaults are the `dart:io` `HttpClient` with `followRedirects = false`, or the browser's `fetch` with `redirect: "error"`. Elsewhere, the app passes `httpGet`.
+
+In TypeScript, the default uses `fetch` with `redirect: "error"` and the signal.
+
+Swift's `WebSocketConnect` is `@MainActor (String) async throws -> any WebSocketConnection`, a text WebSocket with `receive`, `closeCode`, `send` and `close(code:)`. Its `HTTPGet` is `@MainActor (String) async throws -> String`.
+
+The Swift defaults are `urlSessionConnect`, which uses `URLSessionWebSocketTask`, and `urlSessionGet`. That uses `URLSession` without redirects, with status 200 only and at most 65536 bytes. Both stop when their task is cancelled.
+
+#### Clock and randomness
+
+Swift's `PartyClock` is a `@MainActor` protocol with `nowMs() -> Int64` and `schedule(afterMs:_:)`, which returns a cancel function. The default `SystemClock` uses `ContinuousClock` and `Task.sleep`. Every SDK timer goes through the clock, so a virtual clock drives them.
+
+Each random draw is one u in [0, 1), and the reconnect backoff of §14 is the only draw.
+
+#### Threads
+
+In Kotlin, the app passes a single-threaded scope and calls the party from that thread. The party, adapter calls and resolver calls run on its dispatcher.
+
+In Swift, the party and `Relays` run on the main actor, and call the adapter, resolver, clock and transport there.
+
+#### Compatibility and errors
+
+Each adapter type lets a 1.x release add a member with a default without breaking apps. Kotlin's interface members have defaults, Dart apps extend the base class, TypeScript members are optional, and Swift protocols get the default in a protocol extension.
+
+On a resolver timeout of §9.2, `ResolveFailed` carries the language's timeout error. That is Kotlin's `TimeoutCancellationException`, Dart's `TimeoutException`, Swift's `TimeoutError`, or in TypeScript a `DOMException` named `TimeoutError`.
+
+TypeScript also accepts plain values where a Promise is expected from adapter commands and the resolver.
+
+#### Unpaired surrogates in Swift
+
+A Swift `String` can't hold an unpaired surrogate. So `name`, `client` and descriptors from a Swift app never carry one, and the refusal of §7.1 and §9.7 before sending holds by the type.
+
+The SDK reads relay messages with its own JSON reader. It turns an unpaired surrogate escape into U+FFFD and marks it, so the receive checks still refuse it. `JSONValue(parsing:)` throws `invalid_message` on one.
 
 ### 16.9 Test seams
 
-Each SDK exposes, at least to its own tests, the deterministic parts as functions: the room position and running check, the clock (fed pings and pongs with explicit times), the reconciliation step, ranking and the matching walk with simulated probe times, `sameTitle`, code normalization and routing, relay list validation, the `name` and `client` checks, the snapshot check and the receive and send checks of descriptors. A runner may instead drive a rule through a party in virtual time (TypeScript runs `matching.json` that way) or through the constructor (`names.json` in Kotlin, TypeScript and Swift). Tests run a whole party against a fake relay in virtual time through the clock and randomness parameters of §16.8 and a socket seam: Dart, TypeScript and Swift `connect`, and in Kotlin an internal transport.
+Each SDK exposes the deterministic parts as functions, at least to its own tests:
+
+- the room position and running check
+- the clock, fed pings and pongs with explicit times
+- the reconciliation step
+- ranking, and the matching walk with simulated probe times
+- `sameTitle`
+- code normalization and routing
+- relay list validation
+- the `name` and `client` checks
+- the snapshot check
+- the receive and send checks of descriptors
+
+A runner may instead drive a rule through a party in virtual time, as TypeScript runs `matching.json`. It may also drive one through the constructor, as Kotlin, TypeScript and Swift run `names.json`.
+
+Tests run a whole party against a fake relay in virtual time. They do this through the clock and randomness parameters of §16.8 and a socket seam. That seam is `connect` in Dart, TypeScript and Swift, and an internal transport in Kotlin.
 
 ## 17. Conformance
 
-Every SDK runs every table in `conformance/vectors/` in its own suite, passes all of them, and fails on a table it has no runner for. `conformance/vectors/README.md` documents each table's format.
+Every SDK shows its conformance in three ways: the shared vector tables, tests of its own, and four scenarios against a real relay.
+
+Every SDK runs every table in `conformance/vectors/` in its own suite and passes all of them. Its suite fails on a table it has no runner for. `conformance/vectors/README.md` documents each table's format.
 
 |table|section|
 |---|---|
@@ -730,21 +1507,52 @@ Every SDK runs every table in `conformance/vectors/` in its own suite, passes al
 |`room-check.json`|§8|
 |`party.json`|§3–§15|
 
-`party.json` holds traces of a whole party in virtual time: each step is an API call, a relay message, a player, resolver or HTTP answer, or time passing, and lists what the party must then have sent, opened, fetched, published and emitted. A rule a trace pins needs no test of its own.
+`party.json` holds traces of a whole party in virtual time. Each step is an API call, a relay message, a player, resolver or HTTP answer, or time passing. It lists what the party must then have sent, opened, fetched, published and emitted. A rule a trace pins needs no test of its own.
 
-Some rules can't be a trace or a table. Each SDK also has its own tests that:
+### Tests of its own
 
-- its embedded relay list equals the repository's `relays.json`;
-- it accepts a relay message of 16384 bytes and more (`SPEC.md` §3.1);
-- it writes every outgoing int without a fraction or exponent, also when the value came from arithmetic (§2);
-- it refuses an integer API input or a computed wire value outside its bounds before any local effect (§2, §12, §13);
-- a timer longer than 2147483647 ms doesn't run its action early and doesn't re-arm in a tight loop (§2);
-- it refuses unpaired surrogates in `name`, `client` and descriptors before sending (§7.1, §9.7);
-- in TypeScript, changing published state throws in strict mode; in Kotlin and Dart, changing a map or list the app passed to `setMedia` afterwards changes nothing in the party; Swift needs neither test, since `state` is `private(set)` and `Media` is a value type (§16.6);
-- `parseMedia` applies the receive checks and fails with `invalid_message` (§16.2);
-- a probe that throws a cancellation of its own, such as its own timeout, counts as returning nothing and the walk goes on (§9.2);
-- its HTTP GETs are aborted after 5 s even when the fetcher ignores the signal, a body over 65536 bytes fails, redirects aren't followed and only status 200 succeeds (§3.4).
+Some rules can't be a trace or a table. Each SDK also has its own tests that check these:
 
-Each SDK runs exactly four scenarios against a real relay on `127.0.0.1`: (1) `create`, and `join` with a typed code (lower case, with a separator); (2) `setMedia`: the other party's resolver matches, both report `ready`, the room plays and both players follow; (3) `pause`, `seek` and `setRate` reach the other player; (4) a dropped connection is resumed (§14). TypeScript also restarts the relay with `--state-dir`, and both parties resume into the saved room. A test of an SDK's own transport against a local fake server, such as 16384-byte messages, close codes or HTTP limits, is not a scenario.
+- Its embedded relay list equals the repository's `relays.json`.
+- It accepts a relay message of 16384 bytes and more, as `SPEC.md` §3.1 requires.
+- It writes every outgoing int without a fraction or exponent, also when the value came from arithmetic (§2).
+- It refuses an integer API input or a computed wire value outside its bounds before any local effect (§2, §12, §13).
+- A timer longer than 2147483647 ms doesn't run its action early, and doesn't re-arm in a tight loop (§2).
+- It refuses unpaired surrogates in `name`, `client` and descriptors before sending (§7.1, §9.7).
+- In TypeScript, changing published state throws in strict mode.
+- In Kotlin and Dart, changing a map or list the app passed to `setMedia` afterwards changes nothing in the party. Swift needs neither test, since `state` is `private(set)` and `Media` is a value type (§16.6).
+- `parseMedia` applies the receive checks and fails with `invalid_message` (§16.2).
+- A probe that throws a cancellation of its own, such as its own timeout, counts as returning nothing, and the walk goes on (§9.2).
+- Its HTTP GETs are aborted after 5 s even when the fetcher ignores the signal. A body over 65536 bytes fails, redirects aren't followed and only status 200 succeeds (§3.4).
 
-Swift runs its suites with swift-testing through `swift test` at the repository root, where its `Package.swift` sits. `VectorTests` (`sdk/swift/Tests/OpenWatchPartyTests/VectorTests.swift`) runs every table but `party.json` against the SDK's internal functions through `@testable import OpenWatchParty`, the matching walk of `matching.json` on a `VirtualClock`, and its `everyTableRuns` fails on a table it doesn't run; `PartyTraceTests` runs `party.json`. The party tests the traces can't replace (`SessionTests`, `MatchingTests` and `PlayerTests`, with the helpers in `Harness.swift`) run a `WatchParty` against `FakeRelay` in virtual time: a `VirtualClock` as `clock`, which runs timers only when a test calls `run()`, `advance(by:)` or `runUntil`; `FakeRelay.connect` as `connect`; a seeded `RandomNumberGenerator` (`SeededRandom`) as `random`; and `Relays.public` with an `httpGet` that fails (`notFoundRelays`). `RelayListTests` drives `Relays` through `httpGet` on a `VirtualClock`, `DefaultHTTPGetTests` runs the default `urlSessionGet` against a local HTTP server, and `WireTests` covers outgoing ints and timers longer than 2147483647 ms. `IntegrationTests` (`IntegrationTests.swift`, with `RelayHarness.swift`) runs the four scenarios with the default `URLSession` transport against a real relay: a fresh one per test on `127.0.0.1` with `--timer-scale 0.1` and raised per-IP and rate limits, as Kotlin's harness runs it. The relay is `OWP_RELAY_BIN` when set, else `relay/` built with `go build` for the suite. `TcpProxy` cuts the connection in the resume scenario. The suite builds only on macOS and Linux (`#if os(macOS) || os(Linux)`), which can start the relay.
+### Scenarios
+
+Each SDK runs exactly four scenarios against a real relay on `127.0.0.1`:
+
+1. `create`, and `join` with a typed code, in lower case and with a separator.
+2. `setMedia`: the other party's resolver matches, both report `ready`, the room plays and both players follow.
+3. `pause`, `seek` and `setRate` reach the other player.
+4. A dropped connection is resumed, as §14 describes.
+
+TypeScript also restarts the relay with `--state-dir`, and both parties resume into the saved room.
+
+A test of an SDK's own transport against a local fake server is not a scenario. Such tests cover things like 16384-byte messages, close codes or HTTP limits.
+
+### The Swift suites
+
+Swift runs its suites with swift-testing through `swift test` at the repository root, where its `Package.swift` sits.
+
+`VectorTests`, in `sdk/swift/Tests/OpenWatchPartyTests/VectorTests.swift`, runs every table but `party.json` against the SDK's internal functions, through `@testable import OpenWatchParty`. It runs the matching walk of `matching.json` on a `VirtualClock`. Its `everyTableRuns` fails on a table it doesn't run. `PartyTraceTests` runs `party.json`.
+
+The party tests the traces can't replace are `SessionTests`, `MatchingTests` and `PlayerTests`, with the helpers in `Harness.swift`. They run a `WatchParty` against `FakeRelay` in virtual time, with:
+
+- a `VirtualClock` as `clock`, which runs timers only when a test calls `run()`, `advance(by:)` or `runUntil`
+- `FakeRelay.connect` as `connect`
+- a seeded `RandomNumberGenerator`, `SeededRandom`, as `random`
+- `Relays.public` with an `httpGet` that fails, `notFoundRelays`
+
+`RelayListTests` drives `Relays` through `httpGet` on a `VirtualClock`. `DefaultHTTPGetTests` runs the default `urlSessionGet` against a local HTTP server. `WireTests` covers outgoing ints and timers longer than 2147483647 ms.
+
+`IntegrationTests`, in `IntegrationTests.swift` with `RelayHarness.swift`, runs the four scenarios with the default `URLSession` transport against a real relay. Each test gets a fresh relay on `127.0.0.1`, with `--timer-scale 0.1` and raised per-IP and rate limits, as Kotlin's harness runs it. The relay is `OWP_RELAY_BIN` when set, else `relay/` built with `go build` for the suite. `TcpProxy` cuts the connection in the resume scenario.
+
+The suite builds only on macOS and Linux, which can start the relay. It uses `#if os(macOS) || os(Linux)` for that.
