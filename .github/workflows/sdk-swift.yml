@@ -57,10 +57,11 @@ jobs:
           go-version: '1.26.x'
           check-latest: true
           cache-dependency-path: relay/go.sum
-      # In a container job RUNNER_TEMP is the container's path; the runner.temp expression is the host's.
+      # In a container job RUNNER_TEMP is the container's path; the runner.temp expression is the host's. The checkout
+      # belongs to another user than the container's root, so git refuses it and go build can't stamp VCS details.
       - name: Build the relay
         working-directory: relay
-        run: go build -o "$RUNNER_TEMP/owp-relay" ./cmd/owp-relay
+        run: go build -buildvcs=false -o "$RUNNER_TEMP/owp-relay" ./cmd/owp-relay
       - name: Build
         run: swift --version && swift build --build-tests
       - name: Unit, vector and integration tests
