@@ -488,9 +488,11 @@ func TestHugeTimerScale(t *testing.T) {
 // and at which a room closes with reason expired (SPEC.md §11.8).
 func TestMaxRoomAge(t *testing.T) {
 	cfg := testConfig()
-	cfg.MaxRoomAge = 0
-	if _, err := New(cfg); err == nil {
-		t.Fatal("New accepted a max room age of 0")
+	for _, bad := range []time.Duration{-time.Hour, 500 * time.Microsecond} {
+		cfg.MaxRoomAge = bad
+		if _, err := New(cfg); err == nil {
+			t.Fatalf("New accepted a max room age of %v", bad)
+		}
 	}
 	cfg.MaxRoomAge = 300 * time.Millisecond
 	tr := startRelay(t, cfg)
@@ -502,6 +504,37 @@ func TestMaxRoomAge(t *testing.T) {
 	host.create("Host", "Test/1.0")
 	if m := host.expect("closed"); m["reason"] != "expired" {
 		t.Fatalf("closed %v, want reason expired", m)
+	}
+}
+
+// TestNoMaxRoomAge: --max-room-age 0 means no maximum age. /v1/info reports
+// 2^53 − 1, and no room has an expiry timer, a restored one included.
+func TestNoMaxRoomAge(t *testing.T) {
+	cfg := testConfig()
+	cfg.MaxRoomAge = 0
+	cfg.StateDir = t.TempDir()
+	expiring := func(tr *testRelay, code string) bool {
+		tr.srv.mu.Lock()
+		r := tr.srv.rooms[code]
+		tr.srv.mu.Unlock()
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return r.maxAge.pending()
+	}
+	first := startRelay(t, cfg)
+	info, _ := getJSON(t, first.ts.URL+"/v1/info")
+	if got := info["policy"].(msg)["maxRoomAgeMs"]; got != float64(maxSafeInteger) {
+		t.Errorf("maxRoomAgeMs %v, want %d", got, int64(maxSafeInteger))
+	}
+	host := first.dial()
+	host.create("Host", "Test/1.0")
+	if expiring(first, host.code) {
+		t.Fatal("a new room has an expiry timer")
+	}
+	first.stop()
+	second := startRelay(t, cfg)
+	if expiring(second, host.code) {
+		t.Fatal("a restored room has an expiry timer")
 	}
 }
 

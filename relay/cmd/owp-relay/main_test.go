@@ -112,6 +112,10 @@ func TestRoomLifeFlags(t *testing.T) {
 	if cfg, _, err = parseConfig([]string{"--max-room-age", "48h"}); err != nil || cfg.MaxRoomAge != 48*time.Hour {
 		t.Fatalf("a flag must win over its variable: %v %v", cfg.MaxRoomAge, err)
 	}
+	t.Setenv("OWP_MAX_ROOM_AGE", "0")
+	if cfg, _, err = parseConfig(nil); err != nil || cfg.MaxRoomAge != 0 {
+		t.Fatalf("0, no maximum: %v %v", cfg.MaxRoomAge, err)
+	}
 	t.Setenv("OWP_MAX_ROOM_AGE", "7d")
 	if _, _, err = parseConfig(nil); err == nil || !strings.Contains(err.Error(), "is not a duration") {
 		t.Fatalf("7d: %v, want a duration error", err)

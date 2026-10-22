@@ -82,8 +82,8 @@ func New(cfg Config) (*Server, error) {
 	if !(cfg.TimerScale > 0) || math.IsInf(cfg.TimerScale, 0) {
 		return nil, errors.New("--timer-scale must be a positive number")
 	}
-	if cfg.MaxRoomAge < time.Millisecond {
-		return nil, errors.New("--max-room-age must be at least 1ms")
+	if cfg.MaxRoomAge < 0 || (cfg.MaxRoomAge > 0 && cfg.MaxRoomAge < time.Millisecond) {
+		return nil, errors.New("--max-room-age must be 0, for no maximum, or at least 1ms")
 	}
 	if err := cfg.Limits.check(); err != nil {
 		return nil, err
@@ -137,8 +137,14 @@ func (s *Server) scaledMs(ms int64) int64 {
 	return int64(min(math.Floor(float64(ms)*s.cfg.TimerScale), maxSafeInteger))
 }
 
-// roomAgeMs is this relay's maxRoomAgeMs, scaled.
-func (s *Server) roomAgeMs() int64 { return s.scaledMs(s.cfg.MaxRoomAge.Milliseconds()) }
+// roomAgeMs is this relay's maxRoomAgeMs, scaled. With no maximum age it is
+// 2^53 − 1, which no room reaches.
+func (s *Server) roomAgeMs() int64 {
+	if s.cfg.MaxRoomAge == 0 {
+		return maxSafeInteger
+	}
+	return s.scaledMs(s.cfg.MaxRoomAge.Milliseconds())
+}
 
 // lookup finds the room a received `join` or `resume` code names: the code
 // normalized, then matched exactly (SPEC.md §5.1).
@@ -195,7 +201,9 @@ func (s *Server) create(c *conn, name, client string) bool {
 	}
 	s.rooms[r.code] = r
 	s.mu.Unlock()
-	r.arm(&r.maxAge, s.roomAgeMs(), func(int64) { r.close("expired") })
+	if s.cfg.MaxRoomAge > 0 {
+		r.arm(&r.maxAge, s.roomAgeMs(), func(int64) { r.close("expired") })
+	}
 	r.publish(r.add(c, name, client, s.now()))
 	return true
 }

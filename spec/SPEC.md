@@ -999,7 +999,7 @@ A room is deleted in three cases:
 
 - When its last participant is removed by `leave`, `kick` or an expired reservation under §11.6.
 - By `end`, as §7.17 describes.
-- At `maxRoomAgeMs` after creation. Each relay chooses this value, and on the public relays it is 86400000, 24 hours. Every connected member first gets `closed` with reason `expired`.
+- At `maxRoomAgeMs` after creation. Each relay chooses this value, and on the public relays it is 86400000, 24 hours. A relay MAY set no maximum age. It then reports `maxRoomAgeMs` as 9007199254740991 and never closes a room for its age. Every connected member first gets `closed` with reason `expired`.
 
 A relay MAY keep a room whose last participant is removed instead of deleting it. Such an empty room keeps its code and media, is paused and unlocked, and has no host. The next participant to join becomes its host. The room is still deleted at `maxRoomAgeMs`, and by `end` once it has a host again.
 

@@ -133,7 +133,7 @@ func parseConfig(argv []string) (cfg relay.Config, l listen, err error) {
 	joinRateTotal := float("joins-per-second-total", "OWP_JOINS_PER_SECOND_TOTAL", d.JoinsPerSecondTotal,
 		"relay-wide join refill per second")
 	maxAge := duration("max-room-age", "OWP_MAX_ROOM_AGE", relay.DefaultMaxRoomAge,
-		"longest life of a room, such as 24h or 168h")
+		"longest life of a room, such as 24h or 168h; 0 means no maximum")
 	keepEmpty := boolean("keep-empty-rooms", "OWP_KEEP_EMPTY_ROOMS", false,
 		"keep a room after its last participant is gone, until end or --max-room-age")
 	scale := float("timer-scale", "OWP_TIMER_SCALE", 1.0, "test mode: multiplies every relay policy duration")

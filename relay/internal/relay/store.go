@@ -304,7 +304,9 @@ func (s *Server) restoreRoom(rec *roomRecord, now int64, wall time.Time) (*Room,
 		r.hostAbsentSince = now
 		r.arm(&r.hostPromotion, r.scaledMs(hostPromotionMs), r.promoteHost)
 	}
-	r.arm(&r.maxAge, age, func(int64) { r.close("expired") })
+	if s.cfg.MaxRoomAge > 0 {
+		r.arm(&r.maxAge, age, func(int64) { r.close("expired") })
+	}
 	return r, nil
 }
 
