@@ -1001,6 +1001,8 @@ A room is deleted in three cases:
 - By `end`, as §7.17 describes.
 - At `maxRoomAgeMs` after creation. Each relay chooses this value, and on the public relays it is 86400000, 24 hours. Every connected member first gets `closed` with reason `expired`.
 
+A relay MAY keep a room whose last participant is removed instead of deleting it. Such an empty room keeps its code and media, is paused and unlocked, and has no host. The next participant to join becomes its host. The room is still deleted at `maxRoomAgeMs`, and by `end` once it has a host again.
+
 Deletion has these effects:
 
 - Every timer stops, and the relay forgets the media, the participants and the tokens.
@@ -1270,7 +1272,7 @@ On start, the relay restores every room whose maximum age has not passed:
 
 After a crash, the state can be up to 5 s old. `rev` can then go back, which §9.2 covers, and a room that was playing restores a position at most 5 s old.
 
-Reservation timers and host absence start at restore. A restored room therefore lives until its participants' reservations expire, unless someone resumes. Maximum age still counts from the original creation.
+Reservation timers and host absence start at restore. A restored room therefore lives until its participants' reservations expire, unless someone resumes. A room kept empty under §11.8 is restored empty. Maximum age still counts from the original creation.
 
 Held seeks, stall graces, exclusions and `rttMs` are gone. Until participants report again, `defaultRttMs` counts for them in §12.6, and their effective player of §12.3 is `loading`.
 

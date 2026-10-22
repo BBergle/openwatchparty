@@ -259,9 +259,11 @@ func (s *Server) restoreRoom(rec *roomRecord, now int64, wall time.Time) (*Room,
 	createdMs := min(rec.CreatedAt, wallMs)
 	age := maxAgeMs - (wallMs - createdMs)
 	if rec.Rev < 1 || rec.Epoch < 0 || !(rec.Rate >= minRate && rec.Rate <= maxRate) ||
-		(rec.Control != controlHost && rec.Control != controlEveryone) || rec.PeerSeq < 0 ||
-		len(rec.Participants) < 1 {
+		(rec.Control != controlHost && rec.Control != controlEveryone) || rec.PeerSeq < 0 {
 		return nil, errors.New("bad room fields")
+	}
+	if len(rec.Participants) == 0 && !s.cfg.KeepEmptyRooms {
+		return nil, nil // kept empty under --keep-empty-rooms, which is now off
 	}
 	r := newRoom(s, rec.Code, now)
 	r.createdAt = time.UnixMilli(createdMs)
@@ -292,14 +294,16 @@ func (s *Server) restoreRoom(rec *roomRecord, now int64, wall time.Time) (*Room,
 		}
 		r.participants = append(r.participants, p)
 	}
-	if r.host == nil {
+	if r.host == nil && len(r.participants) > 0 {
 		return nil, errors.New("no host")
 	}
 	for _, p := range r.participants {
 		r.arm(&p.removal, r.scaledMs(resumeMs), func(now int64) { r.remove(p, now) })
 	}
-	r.hostAbsentSince = now
-	r.arm(&r.hostPromotion, r.scaledMs(hostPromotionMs), r.promoteHost)
+	if r.host != nil {
+		r.hostAbsentSince = now
+		r.arm(&r.hostPromotion, r.scaledMs(hostPromotionMs), r.promoteHost)
+	}
 	r.arm(&r.maxAge, age, func(int64) { r.close("expired") })
 	return r, nil
 }

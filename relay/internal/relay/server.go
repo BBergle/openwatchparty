@@ -25,14 +25,15 @@ import (
 
 // Config is the relay's configuration (relay/README.md lists the flags).
 type Config struct {
-	ID           string
-	Prefixes     string // first characters this relay creates codes with; "" means all
-	DenylistPath string
-	StateDir     string // "" disables persistence
-	TrustProxy   bool
-	Limits       Limits
-	TimerScale   float64
-	MaxRoomAge   time.Duration // longest life of a room, before --timer-scale
+	ID             string
+	Prefixes       string // first characters this relay creates codes with; "" means all
+	DenylistPath   string
+	StateDir       string // "" disables persistence
+	TrustProxy     bool
+	Limits         Limits
+	TimerScale     float64
+	MaxRoomAge     time.Duration // longest life of a room, before --timer-scale
+	KeepEmptyRooms bool          // a room outlives its last participant, until end or its max age
 }
 
 // DefaultMaxRoomAge is the public relays' maxRoomAgeMs (SPEC.md §13.3).

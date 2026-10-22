@@ -95,11 +95,15 @@ func TestTLSFlagErrors(t *testing.T) {
 	}
 }
 
-func TestMaxRoomAgeFlag(t *testing.T) {
+func TestRoomLifeFlags(t *testing.T) {
 	clearEnv(t)
 	cfg, _, err := parseConfig(nil)
-	if err != nil || cfg.MaxRoomAge != 24*time.Hour {
-		t.Fatalf("default: %v %v, want 24h", cfg.MaxRoomAge, err)
+	if err != nil || cfg.MaxRoomAge != 24*time.Hour || cfg.KeepEmptyRooms {
+		t.Fatalf("defaults: %v %v %v, want 24h and false", cfg.MaxRoomAge, cfg.KeepEmptyRooms, err)
+	}
+	t.Setenv("OWP_KEEP_EMPTY_ROOMS", "true")
+	if cfg, _, err = parseConfig(nil); err != nil || !cfg.KeepEmptyRooms {
+		t.Fatalf("$OWP_KEEP_EMPTY_ROOMS: %v %v, want true", cfg.KeepEmptyRooms, err)
 	}
 	t.Setenv("OWP_MAX_ROOM_AGE", "168h")
 	if cfg, _, err = parseConfig(nil); err != nil || cfg.MaxRoomAge != 168*time.Hour {

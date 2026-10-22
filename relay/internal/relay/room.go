@@ -359,7 +359,15 @@ func (r *Room) remove(p *participant, now int64) {
 	p.forget()
 	r.dirty = true
 	if len(r.participants) == 0 {
-		r.close("")
+		if !r.srv.cfg.KeepEmptyRooms {
+			r.close("")
+			return
+		}
+		// Kept empty: whoever joins next becomes the host (add).
+		r.host = nil
+		r.hostPromotion.stop()
+		set(r, &r.locked, false)
+		r.afterPeerEvent(now)
 		return
 	}
 	if p == r.host {

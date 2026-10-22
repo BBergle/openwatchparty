@@ -108,6 +108,33 @@ func TestRestoreSkipsExpiredRooms(t *testing.T) {
 	}
 }
 
+// TestRestoreEmptyRoom: a room kept empty under --keep-empty-rooms survives a
+// restart, and a relay restarted without the flag drops it.
+func TestRestoreEmptyRoom(t *testing.T) {
+	cfg := testConfig()
+	cfg.KeepEmptyRooms = true
+	cfg.StateDir = t.TempDir()
+	first := startRelay(t, cfg)
+	host := first.dial()
+	host.create("Host", "Test/1.0")
+	host.send(msg{"type": "leave"})
+	time.Sleep(100 * time.Millisecond)
+	first.stop()
+
+	second := startRelay(t, cfg)
+	back := second.dial()
+	back.join(host.code, "Back")
+	back.send(msg{"type": "leave"})
+	time.Sleep(100 * time.Millisecond)
+	second.stop()
+
+	cfg.KeepEmptyRooms = false
+	third := startRelay(t, cfg)
+	c := third.dial()
+	c.send(msg{"type": "join", "code": host.code, "name": "Late", "client": "Test/1.0"})
+	c.expectError(errRoomNotFound)
+}
+
 // TestRestoreRoomAge: a saved room's remaining age is maxRoomAgeMs minus the
 // time since createdAt, without overflow at any createdAt. A createdAt in the
 // future (the clock went back) counts as now, so no room outlives

@@ -505,6 +505,35 @@ func TestMaxRoomAge(t *testing.T) {
 	}
 }
 
+// TestKeepEmptyRooms: with --keep-empty-rooms a room outlives its last
+// participant, whether they leave or their reservation runs out. It stays
+// paused with its media and unlocks, and whoever joins next becomes the host.
+func TestKeepEmptyRooms(t *testing.T) {
+	cfg := testConfig()
+	cfg.KeepEmptyRooms = true
+	tr := startRelay(t, cfg)
+	host, member := playingRoom(t, tr)
+	host.send(msg{"type": "lock", "locked": true})
+	host.until("locked", func(r msg) bool { return r["locked"] == true })
+	member.send(msg{"type": "leave"})
+	host.send(msg{"type": "leave"})
+	time.Sleep(100 * time.Millisecond)
+	next := tr.dial()
+	next.join(host.code, "Next")
+	if r := next.last; r["phase"] != "paused" || r["locked"] != false || hostOf(r) != next.peerID ||
+		len(r["participants"].([]any)) != 1 {
+		t.Fatalf("the kept room: %v", r)
+	}
+
+	cfg.TimerScale = 0.001 // resumeMs 300
+	tr = startRelay(t, cfg)
+	gone := tr.dial()
+	gone.create("Gone", "Test/1.0")
+	gone.ws.Close()
+	time.Sleep(600 * time.Millisecond)
+	tr.dial().join(gone.code, "Back")
+}
+
 // TestFirstSeekAppliedAtOnce: a room's first seek is applied at once, in the
 // relay's first seekCoalesceMs and right after a restore (SPEC.md §12.8).
 func TestFirstSeekAppliedAtOnce(t *testing.T) {

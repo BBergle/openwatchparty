@@ -134,6 +134,8 @@ func parseConfig(argv []string) (cfg relay.Config, l listen, err error) {
 		"relay-wide join refill per second")
 	maxAge := duration("max-room-age", "OWP_MAX_ROOM_AGE", relay.DefaultMaxRoomAge,
 		"longest life of a room, such as 24h or 168h")
+	keepEmpty := boolean("keep-empty-rooms", "OWP_KEEP_EMPTY_ROOMS", false,
+		"keep a room after its last participant is gone, until end or --max-room-age")
 	scale := float("timer-scale", "OWP_TIMER_SCALE", 1.0, "test mode: multiplies every relay policy duration")
 	tlsDomains := str("tls-domains", "OWP_TLS_DOMAINS", "",
 		"comma-separated hostnames: serve TLS on --addr with ACME certificates for them (needs --state-dir)")
@@ -149,7 +151,7 @@ func parseConfig(argv []string) (cfg relay.Config, l listen, err error) {
 		return cfg, l, fmt.Errorf("unexpected argument %q", fs.Arg(0))
 	}
 	cfg = relay.Config{ID: *id, Prefixes: *prefixes, DenylistPath: *deny, StateDir: *stateDir, TrustProxy: *trust,
-		TimerScale: *scale, MaxRoomAge: *maxAge,
+		TimerScale: *scale, MaxRoomAge: *maxAge, KeepEmptyRooms: *keepEmpty,
 		Limits: relay.Limits{MaxParticipants: *maxParticipants, MaxConnections: *maxConns,
 			MaxConnectionsPerIP: *connsPerIP, MaxRooms: *maxRooms, MaxRoomsPerIP: *roomsPerIP, IPv6Factor56: *factor56,
 			IPv6Factor48: *factor48, MessageBurst: *msgBurst, MessagesPerSecond: *msgRate, JoinBurst: *joinBurst, JoinsPerSecond: *joinRate,

@@ -127,7 +127,8 @@ It exits with one of these statuses:
 | `--denylist` | `OWP_DENYLIST` | none | A file of app names to refuse, re-read when it changes. |
 | `--state-dir` | `OWP_STATE_DIR` | none | Where it keeps snapshots, usage counts and ACME certificates. |
 | `--trust-proxy` | `OWP_TRUST_PROXY` | `false` | Takes the client IP from the first `X-Forwarded-For` hop. |
-| `--max-room-age` | `OWP_MAX_ROOM_AGE` | `24h` | The longest life of a room, `maxRoomAgeMs` in `/v1/info`. A longer age lets a group keep one code for longer, but a room still ends once its last participant is gone. Must be at least `1ms`. |
+| `--max-room-age` | `OWP_MAX_ROOM_AGE` | `24h` | The longest life of a room, `maxRoomAgeMs` in `/v1/info`. A longer age lets a group keep one code for longer. Must be at least `1ms`. |
+| `--keep-empty-rooms` | `OWP_KEEP_EMPTY_ROOMS` | `false` | Keeps a room after its last participant is gone, so its code works until the room is ended or reaches `--max-room-age`. The kept room is paused and unlocked, and the next person to join becomes its host. |
 | `--timer-scale` | `OWP_TIMER_SCALE` | `1` | Test mode: multiplies the scaled policy durations (SPEC.md §13.3). Must be positive. |
 
 ### Connection and room limits
@@ -237,7 +238,7 @@ On restart, it restores every room younger than `--max-room-age`:
 - A room without media comes back `idle`.
 - Its participants come back disconnected, and they can resume.
 
-A room is deleted once its last participant is gone. A restored room therefore lasts until its participants resume or their reservations run out.
+A room is deleted once its last participant is gone, unless `--keep-empty-rooms` is on. A restored room therefore lasts until its participants resume or their reservations run out.
 
 ## Metrics, usage and logs
 
