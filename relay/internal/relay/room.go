@@ -40,7 +40,7 @@ const (
 	seekCoalesceMs    = 200
 	hostPromotionMs   = 30_000
 	resumeMs          = 5 * 60_000
-	maxRoomAgeMs      = 24 * 60 * 60_000
+	maxRoomAgeMs      = 24 * 60 * 60_000 // the default of --max-room-age
 	startDelayRttRate = 1.5
 )
 

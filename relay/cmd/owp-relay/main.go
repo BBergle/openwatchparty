@@ -90,6 +90,16 @@ func parseConfig(argv []string) (cfg relay.Config, l listen, err error) {
 		}
 		return fs.Float64(name, def, usage+" ($"+env+")")
 	}
+	duration := func(name, env string, def time.Duration, usage string) *time.Duration {
+		if v, ok := os.LookupEnv(env); ok {
+			d, err := time.ParseDuration(v)
+			if err != nil {
+				envErr = fmt.Errorf("$%s: %q is not a duration", env, v)
+			}
+			def = d
+		}
+		return fs.Duration(name, def, usage+" ($"+env+")")
+	}
 
 	a := str("addr", "OWP_ADDR", ":8080", "public listener: /v1/ws, /v1/info, /health")
 	admin := str("admin-addr", "OWP_ADMIN_ADDR", "127.0.0.1:9090",
@@ -122,6 +132,8 @@ func parseConfig(argv []string) (cfg relay.Config, l listen, err error) {
 		"relay-wide join bucket size")
 	joinRateTotal := float("joins-per-second-total", "OWP_JOINS_PER_SECOND_TOTAL", d.JoinsPerSecondTotal,
 		"relay-wide join refill per second")
+	maxAge := duration("max-room-age", "OWP_MAX_ROOM_AGE", relay.DefaultMaxRoomAge,
+		"longest life of a room, such as 24h or 168h")
 	scale := float("timer-scale", "OWP_TIMER_SCALE", 1.0, "test mode: multiplies every relay policy duration")
 	tlsDomains := str("tls-domains", "OWP_TLS_DOMAINS", "",
 		"comma-separated hostnames: serve TLS on --addr with ACME certificates for them (needs --state-dir)")
@@ -137,7 +149,7 @@ func parseConfig(argv []string) (cfg relay.Config, l listen, err error) {
 		return cfg, l, fmt.Errorf("unexpected argument %q", fs.Arg(0))
 	}
 	cfg = relay.Config{ID: *id, Prefixes: *prefixes, DenylistPath: *deny, StateDir: *stateDir, TrustProxy: *trust,
-		TimerScale: *scale,
+		TimerScale: *scale, MaxRoomAge: *maxAge,
 		Limits: relay.Limits{MaxParticipants: *maxParticipants, MaxConnections: *maxConns,
 			MaxConnectionsPerIP: *connsPerIP, MaxRooms: *maxRooms, MaxRoomsPerIP: *roomsPerIP, IPv6Factor56: *factor56,
 			IPv6Factor48: *factor48, MessageBurst: *msgBurst, MessagesPerSecond: *msgRate, JoinBurst: *joinBurst, JoinsPerSecond: *joinRate,

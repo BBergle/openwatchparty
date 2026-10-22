@@ -999,7 +999,7 @@ A room is deleted in three cases:
 
 - When its last participant is removed by `leave`, `kick` or an expired reservation under §11.6.
 - By `end`, as §7.17 describes.
-- At `maxRoomAgeMs` (86400000, 24 hours) after creation. Every connected member first gets `closed` with reason `expired`.
+- At `maxRoomAgeMs` after creation. Each relay chooses this value, and on the public relays it is 86400000, 24 hours. Every connected member first gets `closed` with reason `expired`.
 
 Deletion has these effects:
 

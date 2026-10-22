@@ -95,6 +95,25 @@ func TestTLSFlagErrors(t *testing.T) {
 	}
 }
 
+func TestMaxRoomAgeFlag(t *testing.T) {
+	clearEnv(t)
+	cfg, _, err := parseConfig(nil)
+	if err != nil || cfg.MaxRoomAge != 24*time.Hour {
+		t.Fatalf("default: %v %v, want 24h", cfg.MaxRoomAge, err)
+	}
+	t.Setenv("OWP_MAX_ROOM_AGE", "168h")
+	if cfg, _, err = parseConfig(nil); err != nil || cfg.MaxRoomAge != 168*time.Hour {
+		t.Fatalf("environment: %v %v, want 168h", cfg.MaxRoomAge, err)
+	}
+	if cfg, _, err = parseConfig([]string{"--max-room-age", "48h"}); err != nil || cfg.MaxRoomAge != 48*time.Hour {
+		t.Fatalf("a flag must win over its variable: %v %v", cfg.MaxRoomAge, err)
+	}
+	t.Setenv("OWP_MAX_ROOM_AGE", "7d")
+	if _, _, err = parseConfig(nil); err == nil || !strings.Contains(err.Error(), "is not a duration") {
+		t.Fatalf("7d: %v, want a duration error", err)
+	}
+}
+
 // TestTLSWithoutStateDirExits2 runs main in a child process.
 func TestTLSWithoutStateDirExits2(t *testing.T) {
 	if os.Getenv("OWP_TEST_MAIN") == "1" {
@@ -118,7 +137,8 @@ func TestTLSWithoutStateDirExits2(t *testing.T) {
 // startPublic serves the relay's public endpoints with short timeouts.
 func startPublic(t *testing.T, read, idle time.Duration) string {
 	t.Helper()
-	srv, err := relay.New(relay.Config{ID: "test", TimerScale: 1, Limits: relay.DefaultLimits})
+	srv, err := relay.New(relay.Config{ID: "test", TimerScale: 1, Limits: relay.DefaultLimits,
+		MaxRoomAge: relay.DefaultMaxRoomAge})
 	if err != nil {
 		t.Fatal(err)
 	}

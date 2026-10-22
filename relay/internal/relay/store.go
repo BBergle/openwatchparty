@@ -252,7 +252,7 @@ func (s *Server) restoreRoom(rec *roomRecord, now int64, wall time.Time) (*Room,
 	}
 	// In milliseconds, so no createdAt overflows. One in the future means the
 	// clock went back: it counts as now, so the room lives at most maxRoomAgeMs.
-	wallMs, maxAgeMs := wall.UnixMilli(), s.scaledMs(maxRoomAgeMs)
+	wallMs, maxAgeMs := wall.UnixMilli(), s.roomAgeMs()
 	if rec.CreatedAt <= wallMs-maxAgeMs {
 		return nil, nil
 	}

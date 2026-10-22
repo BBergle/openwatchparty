@@ -32,7 +32,11 @@ type Config struct {
 	TrustProxy   bool
 	Limits       Limits
 	TimerScale   float64
+	MaxRoomAge   time.Duration // longest life of a room, before --timer-scale
 }
+
+// DefaultMaxRoomAge is the public relays' maxRoomAgeMs (SPEC.md §13.3).
+const DefaultMaxRoomAge = maxRoomAgeMs * time.Millisecond
 
 const (
 	denyPollInterval = time.Second
@@ -76,6 +80,9 @@ func New(cfg Config) (*Server, error) {
 	}
 	if !(cfg.TimerScale > 0) || math.IsInf(cfg.TimerScale, 0) {
 		return nil, errors.New("--timer-scale must be a positive number")
+	}
+	if cfg.MaxRoomAge < time.Millisecond {
+		return nil, errors.New("--max-room-age must be at least 1ms")
 	}
 	if err := cfg.Limits.check(); err != nil {
 		return nil, err
@@ -128,6 +135,9 @@ func (s *Server) now() int64 { return time.Since(s.start).Milliseconds() }
 func (s *Server) scaledMs(ms int64) int64 {
 	return int64(min(math.Floor(float64(ms)*s.cfg.TimerScale), maxSafeInteger))
 }
+
+// roomAgeMs is this relay's maxRoomAgeMs, scaled.
+func (s *Server) roomAgeMs() int64 { return s.scaledMs(s.cfg.MaxRoomAge.Milliseconds()) }
 
 // lookup finds the room a received `join` or `resume` code names: the code
 // normalized, then matched exactly (SPEC.md §5.1).
@@ -184,7 +194,7 @@ func (s *Server) create(c *conn, name, client string) bool {
 	}
 	s.rooms[r.code] = r
 	s.mu.Unlock()
-	r.arm(&r.maxAge, r.scaledMs(maxRoomAgeMs), func(int64) { r.close("expired") })
+	r.arm(&r.maxAge, s.roomAgeMs(), func(int64) { r.close("expired") })
 	r.publish(r.add(c, name, client, s.now()))
 	return true
 }
@@ -402,7 +412,7 @@ func (s *Server) serveInfo(w http.ResponseWriter, _ *http.Request) {
 			StartDelayRttFactor: startDelayRttRate, DefaultRttMs: defaultRttMs,
 			SeekCoalesceMs: s.scaledMs(seekCoalesceMs), PauseToleranceMs: pauseToleranceMs,
 			HostPromotionMs: s.scaledMs(hostPromotionMs), ResumeMs: s.scaledMs(resumeMs),
-			MaxRoomAgeMs: s.scaledMs(maxRoomAgeMs),
+			MaxRoomAgeMs: s.roomAgeMs(),
 		},
 	}
 	w.Header().Set("Access-Control-Allow-Origin", "*")

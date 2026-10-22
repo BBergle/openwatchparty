@@ -105,6 +105,7 @@ Every flag has an environment variable. The variable replaces the default, and a
 The values follow these rules:
 
 - Booleans take the values Go's `strconv.ParseBool` accepts, such as `true`, `false`, `1` and `0`.
+- Durations take the values Go's `time.ParseDuration` accepts, such as `24h` and `168h`.
 - Each limit must be at least 1, and each rate must be positive.
 
 It exits with one of these statuses:
@@ -126,6 +127,7 @@ It exits with one of these statuses:
 | `--denylist` | `OWP_DENYLIST` | none | A file of app names to refuse, re-read when it changes. |
 | `--state-dir` | `OWP_STATE_DIR` | none | Where it keeps snapshots, usage counts and ACME certificates. |
 | `--trust-proxy` | `OWP_TRUST_PROXY` | `false` | Takes the client IP from the first `X-Forwarded-For` hop. |
+| `--max-room-age` | `OWP_MAX_ROOM_AGE` | `24h` | The longest life of a room, `maxRoomAgeMs` in `/v1/info`. A longer age lets a group keep one code for longer, but a room still ends once its last participant is gone. Must be at least `1ms`. |
 | `--timer-scale` | `OWP_TIMER_SCALE` | `1` | Test mode: multiplies the scaled policy durations (SPEC.md §13.3). Must be positive. |
 
 ### Connection and room limits
@@ -229,7 +231,7 @@ On SIGTERM or SIGINT, the relay shuts down in this order:
 4. It waits up to 2 seconds for them to close.
 5. It exits with status 0.
 
-On restart, it restores every room created less than 24 hours ago:
+On restart, it restores every room younger than `--max-room-age`:
 
 - A room with media comes back `paused` at the saved position.
 - A room without media comes back `idle`.

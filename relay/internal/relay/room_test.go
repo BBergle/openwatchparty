@@ -484,6 +484,27 @@ func TestHugeTimerScale(t *testing.T) {
 	host.expect("pong")
 }
 
+// TestMaxRoomAge: --max-room-age sets maxRoomAgeMs, which /v1/info reports
+// and at which a room closes with reason expired (SPEC.md §11.8).
+func TestMaxRoomAge(t *testing.T) {
+	cfg := testConfig()
+	cfg.MaxRoomAge = 0
+	if _, err := New(cfg); err == nil {
+		t.Fatal("New accepted a max room age of 0")
+	}
+	cfg.MaxRoomAge = 300 * time.Millisecond
+	tr := startRelay(t, cfg)
+	info, _ := getJSON(t, tr.ts.URL+"/v1/info")
+	if got := info["policy"].(msg)["maxRoomAgeMs"]; got != float64(300) {
+		t.Errorf("maxRoomAgeMs %v, want 300", got)
+	}
+	host := tr.dial()
+	host.create("Host", "Test/1.0")
+	if m := host.expect("closed"); m["reason"] != "expired" {
+		t.Fatalf("closed %v, want reason expired", m)
+	}
+}
+
 // TestFirstSeekAppliedAtOnce: a room's first seek is applied at once, in the
 // relay's first seekCoalesceMs and right after a restore (SPEC.md §12.8).
 func TestFirstSeekAppliedAtOnce(t *testing.T) {

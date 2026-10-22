@@ -23,7 +23,7 @@ type msg = map[string]any
 const movie = `{"kind":"movie","title":"Test","durationMs":7200000}`
 
 func testConfig() Config {
-	return Config{ID: "test", TimerScale: 1, Limits: DefaultLimits}
+	return Config{ID: "test", TimerScale: 1, Limits: DefaultLimits, MaxRoomAge: DefaultMaxRoomAge}
 }
 
 type testRelay struct {

@@ -57,7 +57,7 @@ Each row lands in one pull request.
 | Heading or link in a rendered doc | Run the website checks |
 
 - The §13.2 policy limits are flags, and their public values are the defaults.
-- The §13.3 policy durations are constants in `relay/internal/relay/room.go`, scaled only by `--timer-scale`.
+- The §13.3 policy durations are constants in `relay/internal/relay/room.go`, scaled only by `--timer-scale`. The exception is `maxRoomAgeMs`, whose constant is the default of `--max-room-age`.
 - `/v1/info` reports both; no SDK reads it.
 - Every flag has an `OWP_*` environment variable, which is how `relay/compose.yaml` sets them.
 - `owp-peer.js` imports `sdk/typescript/src/index.ts` directly, so keep the SDK's `erasableSyntaxOnly: true`.
